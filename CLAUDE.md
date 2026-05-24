@@ -7,6 +7,7 @@ Optimal play calculator for Balatro card game. Pure-TypeScript engine + React 18
 - `npm run build` — production build to `dist/`
 - `npm run build:win` — cross-compile Windows .exe (NSIS installer + portable binary)
 - `npx vitest run` — run 212 unit tests (engine core)
+- `.github/workflows/build-macos.yml` — auto-build macOS DMG on push to main (Intel + Apple Silicon)
 - `npx vitest` — watch mode tests
 
 ## Architecture
