@@ -407,6 +407,23 @@ const zhCN: Translations = {
     removeOne: '-1',
     noCards: '空格',
   },
+  notation: {
+    title: '快捷短码',
+    placeholder: '在此粘贴短码，例如：\nah 10s kd.g.r 3*jh\n\n每行一张牌，或用空格/逗号分隔。',
+    parse: '解析',
+    cheatSheet: '编码参考表',
+    cheatSheetDesc: '语法：点数+花色 .强化 .版本 .蜡封（跳过用双点 ".."）',
+    rankLabel: '点数',
+    suitLabel: '花色',
+    enhLabel: '强化',
+    ediLabel: '版本',
+    sealLabel: '蜡封',
+    exampleColumn: '示例',
+    multiplierHint: '提示：使用 3*ah 或 ah*3 创建 3 张相同牌。',
+    errors: {
+      invalidFormat: '格式无效',
+    },
+  },
 
   discard: {
     title: '弃牌推荐',
@@ -420,6 +437,9 @@ const zhCN: Translations = {
     improvement: '提升',
     noBeneficial: '未找到有利弃牌方案，直接打出当前手牌吧。',
     idleMessage: '点击"分析弃牌"找出最佳弃牌方案和目标牌型。',
+    applySuggestion: '应用建议',
+    applyTooltip: '将此弃牌建议应用到当前手牌',
+    applyDisabled: '无剩余弃牌次数或Boss禁止弃牌',
   },
 
   runSim: {

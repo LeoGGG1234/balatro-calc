@@ -34,23 +34,26 @@ const SIZE_DIMS: Record<string, string> = { sm: '60px', md: '80px', lg: '100px' 
 const SIZE_FONT: Record<string, string> = { sm: '0.7rem', md: '0.85rem', lg: '1rem' };
 
 export function CardComponent({ card, size = 'md', onClick, selected, disabled }: CardComponentProps) {
+  const isFog = card.fog === true;
   const isStone = card.enhancement === CardEnhancement.Stone;
   const isRed = [Suit.Hearts, Suit.Diamonds].includes(card.suit);
 
   const width = SIZE_DIMS[size];
   const fontSize = SIZE_FONT[size];
 
-  const bgColor = isStone ? '#718096' : '#1a202c';
-  const borderColor = selected ? '#48bb78' : isRed ? '#e53e3e' : '#4a5568';
-  const textColor = isStone ? '#e2e8f0' : isRed ? '#fc8181' : '#e2e8f0';
-  const sealColor = card.seal !== Seal.None ? SEAL_COLORS[card.seal] : undefined;
-  const enhColor = card.enhancement !== CardEnhancement.None ? ENHANCEMENT_COLORS[card.enhancement] : undefined;
+  // Fog cards get a special "unknown" appearance
+  const bgColor = isFog ? '#2d3748' : isStone ? '#718096' : '#1a202c';
+  const borderColor = isFog ? '#4a5568' : selected ? '#48bb78' : isRed ? '#e53e3e' : '#4a5568';
+  const textColor = isFog ? '#718096' : isStone ? '#e2e8f0' : isRed ? '#fc8181' : '#e2e8f0';
+  const sealColor = !isFog && card.seal !== Seal.None ? SEAL_COLORS[card.seal] : undefined;
+  const enhColor = !isFog && card.enhancement !== CardEnhancement.None ? ENHANCEMENT_COLORS[card.enhancement] : undefined;
 
-  const chipStr = isStone ? '50' : rankToChips(card.rank).toString();
+  const chipStr = isFog ? '?' : isStone ? '50' : rankToChips(card.rank).toString();
 
   const classes = [
     'card',
     `card--${size}`,
+    isFog ? 'card--fog' : '',
     isStone ? 'card--stone' : '',
     selected ? 'card--selected' : '',
     disabled ? 'card--disabled' : '',
@@ -74,7 +77,10 @@ export function CardComponent({ card, size = 'md', onClick, selected, disabled }
         outlineOffset: sealColor ? '2px' : undefined,
       }}
     >
-      {!isStone && (
+      {isFog && (
+        <span style={{ fontSize: '1.4em', fontWeight: 'bold', color: '#718096' }}>?</span>
+      )}
+      {!isFog && !isStone && (
         <>
           <span className="card__suit" style={{ color: SUIT_COLORS[card.suit] }}>
             {SUIT_SYMBOLS[card.suit]}
@@ -82,7 +88,7 @@ export function CardComponent({ card, size = 'md', onClick, selected, disabled }
           <span>{card.rank}</span>
         </>
       )}
-      {isStone && <span style={{ fontSize: '1.2em' }}>{'■'}</span>}
+      {!isFog && isStone && <span style={{ fontSize: '1.2em' }}>{'■'}</span>}
       <span className="card__chips">{chipStr}</span>
       {enhColor && (
         <div

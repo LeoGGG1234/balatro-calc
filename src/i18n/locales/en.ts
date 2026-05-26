@@ -407,6 +407,23 @@ const en: Translations = {
     removeOne: '-1',
     noCards: 'Empty',
   },
+  notation: {
+    title: 'Card Notation',
+    placeholder: 'Paste shorthand here, e.g.:\nah 10s kd.g.r 3*jh\n\nOne card per line or space/comma separated.',
+    parse: 'Parse',
+    cheatSheet: 'Notation Reference',
+    cheatSheetDesc: 'Syntax: rank+suit .enhancement .edition .seal (skip with double dot: "..")',
+    rankLabel: 'Rank',
+    suitLabel: 'Suit',
+    enhLabel: 'Enhancement',
+    ediLabel: 'Edition',
+    sealLabel: 'Seal',
+    exampleColumn: 'Example',
+    multiplierHint: 'Tip: Use 3*ah or ah*3 to create 3 copies.',
+    errors: {
+      invalidFormat: 'Invalid notation',
+    },
+  },
 
   discard: {
     title: 'Discard Recommendations',
@@ -420,6 +437,9 @@ const en: Translations = {
     improvement: 'Improvement',
     noBeneficial: 'No beneficial discards found. Play your current hand.',
     idleMessage: 'Click "Analyze Discards" to find the best cards to discard and what hand to aim for.',
+    applySuggestion: 'Apply Suggestion',
+    applyTooltip: 'Apply this discard suggestion to your hand',
+    applyDisabled: 'No discards remaining or boss prevents discarding',
   },
 
   runSim: {

@@ -89,6 +89,8 @@ export interface Card {
   edition: CardEdition;
   seal: Seal;
   debuffed: boolean;
+  /** True when this card is a fog placeholder (unknown drawn card in unseeded mode) */
+  fog?: boolean;
 }
 
 // ─── Joker ──────────────────────────────────────────────────────
@@ -359,4 +361,8 @@ export function rankToChips(rank: Rank): number {
 
 export function isStone(card: Card): boolean {
   return card.enhancement === CardEnhancement.Stone;
+}
+
+export function isFogCard(card: Card): boolean {
+  return card.fog === true;
 }

@@ -164,6 +164,25 @@ export interface Translations {
     noCards: string;
   };
 
+  // Card Notation
+  notation: {
+    title: string;
+    placeholder: string;
+    parse: string;
+    cheatSheet: string;
+    cheatSheetDesc: string;
+    rankLabel: string;
+    suitLabel: string;
+    enhLabel: string;
+    ediLabel: string;
+    sealLabel: string;
+    exampleColumn: string;
+    multiplierHint: string;
+    errors: {
+      invalidFormat: string;
+    };
+  };
+
   // Discard
   discard: {
     title: string;
@@ -177,6 +196,9 @@ export interface Translations {
     improvement: string;
     noBeneficial: string;
     idleMessage: string;
+    applySuggestion: string;
+    applyTooltip: string;
+    applyDisabled: string;
   };
 
   // Run Sim

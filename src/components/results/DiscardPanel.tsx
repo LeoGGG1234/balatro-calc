@@ -9,9 +9,12 @@ interface DiscardPanelProps {
   status: DiscardStatus;
   error: string | null;
   onAnalyze: () => void;
+  onApplyDiscard?: (discardIndices: number[]) => void;
+  discardsLeft?: number;
+  activeBossEffect?: string | null;
 }
 
-export function DiscardPanel({ result, status, error, onAnalyze }: DiscardPanelProps) {
+export function DiscardPanel({ result, status, error, onAnalyze, onApplyDiscard, discardsLeft, activeBossEffect }: DiscardPanelProps) {
   const { t } = useI18n();
 
   // ─── Idle state ────────────────────────────────────────────
@@ -78,7 +81,16 @@ export function DiscardPanel({ result, status, error, onAnalyze }: DiscardPanelP
         <div className="discard-panel__recommendations">
           <h3>{t.discard.title} ({result.topRecommendations.length})</h3>
           {result.topRecommendations.map((opt, i) => (
-            <DiscardRecommendationCard key={i} option={opt} index={i} />
+            <DiscardRecommendationCard
+              key={i}
+              option={opt}
+              index={i}
+              onApplyDiscard={onApplyDiscard}
+              canApply={
+                (discardsLeft ?? 0) > 0 &&
+                activeBossEffect !== 'the_water'
+              }
+            />
           ))}
         </div>
       ) : (
@@ -103,7 +115,13 @@ export function DiscardPanel({ result, status, error, onAnalyze }: DiscardPanelP
 
 // ─── Recommendation Card ────────────────────────────────────────
 
-function DiscardRecommendationCard({ option, index }: { option: DiscardOption; index: number }) {
+function DiscardRecommendationCard({
+  option, index, onApplyDiscard, canApply,
+}: {
+  option: DiscardOption; index: number;
+  onApplyDiscard?: (discardIndices: number[]) => void;
+  canApply: boolean;
+}) {
   const { t } = useI18n();
   const improvement = Math.round(option.improvement);
   const isPositive = improvement > 0;
@@ -156,6 +174,18 @@ function DiscardRecommendationCard({ option, index }: { option: DiscardOption; i
       <div className="discard-panel__rationale">
         {option.rationale}
       </div>
+
+      {/* Apply button */}
+      {onApplyDiscard && (
+        <button
+          className="discard-panel__apply-btn"
+          disabled={!canApply}
+          title={!canApply ? t.discard.applyDisabled : t.discard.applyTooltip}
+          onClick={() => onApplyDiscard(option.discardIndices)}
+        >
+          {t.discard.applySuggestion}
+        </button>
+      )}
     </div>
   );
 }

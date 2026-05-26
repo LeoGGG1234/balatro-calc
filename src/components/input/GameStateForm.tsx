@@ -16,6 +16,7 @@ interface GameStateFormProps {
   effectiveMaxDiscards: number;
   effectiveHandSize: number;
   onUpdateCard: (index: number, card: Card) => void;
+  onParseNotation?: (cards: Card[]) => void;
   onAddJoker: (id: string) => void;
   onRemoveJoker: (index: number) => void;
   onReorderJokers: (from: number, to: number) => void;
@@ -40,7 +41,7 @@ interface GameStateFormProps {
 
 export function GameStateForm({
   form, effectiveMaxHands, effectiveMaxDiscards, effectiveHandSize,
-  onUpdateCard, onAddJoker, onRemoveJoker,
+  onUpdateCard, onParseNotation, onAddJoker, onRemoveJoker,
   onReorderJokers, onSetHandLevel, onUpdateField, onCompute,
   onToggleVoucher, onSetBossEffect,
   computing, jokerStateOverrides, onJokerStateChange,
@@ -53,7 +54,7 @@ export function GameStateForm({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Hand Cards Section */}
       <section className="section">
-        <HandCardsInput cards={form.handCards} onUpdateCard={onUpdateCard} />
+        <HandCardsInput cards={form.handCards} onUpdateCard={onUpdateCard} onParseNotation={onParseNotation} />
       </section>
 
       {/* Jokers Section */}

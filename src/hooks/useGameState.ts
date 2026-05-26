@@ -8,10 +8,13 @@ import {
   BlindType,
 } from '../engine/types';
 import { getDefaultHandLevels } from '../engine/constants';
-import { getJokerRoundModifiers } from '../engine/joker-data';
+import { getJokerRoundModifiers, getJokerModifiers } from '../engine/joker-data';
 import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, batchUpdateDeckCards, applyDeckPreset } from '../engine/deck';
 import type { DeckCardSlot, DeckCardFilter } from '../engine/types';
 import type { DeckPreset } from '../engine/deck';
+import { createRng } from '../engine/rng';
+import { drawHand } from '../engine/run-simulator';
+import { recognizeHand } from '../engine/hand-evaluator';
 
 // ─── Voucher / Boss Modifier Presets ──────────────────────────
 
@@ -142,12 +145,17 @@ export interface GameStateForm {
   handSizeBase: number;
   activeVouchers: string[];
   activeBossEffect: string | null;
+  /** Seeded RNG mode: when set, discard application draws from deck deterministically */
+  seed: string | null;
+  /** User-provided joker state override values (index → value). Auto-updated on discard. */
+  jokerStateOverrides: Record<number, number>;
 }
 
 // ─── Actions ───────────────────────────────────────────────────
 
 export type FormAction =
   | { type: 'SET_HAND_CARD'; index: number; card: Card }
+  | { type: 'SET_HAND_CARDS'; cards: Card[] }
   | { type: 'ADD_JOKER'; jokerId: string }
   | { type: 'REMOVE_JOKER'; index: number }
   | { type: 'REORDER_JOKERS'; fromIndex: number; toIndex: number }
@@ -171,6 +179,9 @@ export type FormAction =
   | { type: 'UPDATE_DECK_CARD'; slotIndex: number; updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>> }
   | { type: 'BATCH_UPDATE_DECK_CARDS'; filter: DeckCardFilter; updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>> }
   | { type: 'APPLY_DECK_PRESET'; preset: DeckPreset }
+  | { type: 'SET_SEED'; seed: string | null }
+  | { type: 'SET_JOKER_STATE_OVERRIDE'; index: number; value: number }
+  | { type: 'APPLY_DISCARD_SUGGESTION'; discardIndices: number[] }
   | { type: 'RESET_FORM' };
 
 // ─── Initial State ─────────────────────────────────────────────
@@ -207,7 +218,113 @@ function createInitialState(): GameStateForm {
     handSizeBase: 8,
     activeVouchers: [],
     activeBossEffect: null,
+    seed: null,
+    jokerStateOverrides: {},
   };
+}
+
+// ─── Fog Card Factory ──────────────────────────────────────────
+
+let _fogIdCounter = 0;
+
+function createFogCard(): Card {
+  return {
+    id: `fog_${_fogIdCounter++}`,
+    rank: Rank.Two,
+    suit: Suit.Spades,
+    enhancement: CardEnhancement.None,
+    edition: CardEdition.None,
+    seal: Seal.None,
+    debuffed: false,
+    fog: true,
+  };
+}
+
+// ─── Discard Joker State Auto-Update ───────────────────────────
+
+/**
+ * Compute joker state override deltas triggered by a discard action.
+ * Returns updated overrides for discard-triggered jokers.
+ */
+export function computeDiscardJokerDeltas(
+  state: GameStateForm,
+  discardCards: Card[],
+): Record<number, number> {
+  const deltas: Record<number, number> = {};
+
+  for (let i = 0; i < state.jokers.length; i++) {
+    const joker = state.jokers[i];
+    const currentOverride = state.jokerStateOverrides[i];
+
+    switch (joker.id) {
+      case 'castle': {
+        // +3 chips per discard action
+        const current = currentOverride ?? 0;
+        deltas[i] = current + 3;
+        break;
+      }
+      case 'green_joker': {
+        // -1 mult per discard
+        const current = currentOverride ?? 0;
+        deltas[i] = Math.max(0, current - 1);
+        break;
+      }
+      case 'faceless': {
+        // +5 mult per face card discarded
+        const faceCount = discardCards.filter(c =>
+          c.rank === Rank.Jack || c.rank === Rank.Queen || c.rank === Rank.King
+        ).length;
+        if (faceCount > 0) {
+          const current = currentOverride ?? 0;
+          deltas[i] = current + faceCount * 5;
+        }
+        break;
+      }
+      case 'hit_the_road': {
+        // +0.5 xMult per Jack discarded
+        const jackCount = discardCards.filter(c => c.rank === Rank.Jack).length;
+        if (jackCount > 0) {
+          const current = currentOverride ?? 1;
+          deltas[i] = current + jackCount * 0.5;
+        }
+        break;
+      }
+      case 'yorick': {
+        // Track discarded cards: +1 xMult per 23 cards discarded
+        const current = currentOverride ?? 1;
+        const discarded = discardCards.length;
+        deltas[i] = current + discarded; // raw count; scorer divides by 23
+        break;
+      }
+      case 'burnt_joker': {
+        // Burnt Joker is handled separately via hand level upgrade
+        break;
+      }
+    }
+  }
+
+  return deltas;
+}
+
+/**
+ * Check if Burnt Joker should trigger (first discard of round).
+ * Returns the hand type to upgrade, or null.
+ */
+function resolveBurntJokerUpgrade(
+  state: GameStateForm,
+  discardCards: Card[],
+): HandType | null {
+  // Burnt Joker triggers on the FIRST discard of the round
+  if (state.discardsUsed > 0) return null;
+
+  const hasBurntJoker = state.jokers.some(j => j.id === 'burnt_joker');
+  if (!hasBurntJoker) return null;
+
+  // Determine hand type from discarded cards — Burnt Joker upgrades the level
+  // of the hand type the discarded cards WOULD form
+  const mods = getJokerModifiers(state.jokers);
+  const handType = recognizeHand(discardCards, mods);
+  return handType;
 }
 
 // ─── Helpers for computing effective values ────────────────────
@@ -226,7 +343,7 @@ export function getEffectiveHandSize(form: GameStateForm): number {
 
 // ─── Reducer ───────────────────────────────────────────────────
 
-function formReducer(state: GameStateForm, action: FormAction): GameStateForm {
+export function formReducer(state: GameStateForm, action: FormAction): GameStateForm {
   switch (action.type) {
     case 'SET_HAND_CARD':
       return {
@@ -234,6 +351,12 @@ function formReducer(state: GameStateForm, action: FormAction): GameStateForm {
         handCards: state.handCards.map((c, i) =>
           i === action.index ? action.card : c
         ),
+      };
+
+    case 'SET_HAND_CARDS':
+      return {
+        ...state,
+        handCards: action.cards,
       };
 
     case 'ADD_JOKER':
@@ -333,6 +456,92 @@ function formReducer(state: GameStateForm, action: FormAction): GameStateForm {
     case 'APPLY_DECK_PRESET':
       return { ...state, deckComposition: applyDeckPreset(action.preset) };
 
+    case 'SET_SEED':
+      return { ...state, seed: action.seed };
+
+    case 'SET_JOKER_STATE_OVERRIDE':
+      return {
+        ...state,
+        jokerStateOverrides: {
+          ...state.jokerStateOverrides,
+          [action.index]: action.value,
+        },
+      };
+
+    case 'APPLY_DISCARD_SUGGESTION': {
+      const effectiveDiscards = computeEffectiveMaxDiscards(
+        state.maxDiscardsBase, state.activeVouchers, state.activeBossEffect, state.jokers,
+      );
+      const discardsLeft = effectiveDiscards - state.discardsUsed;
+      if (discardsLeft <= 0) return state; // No discards left
+
+      const indices = action.discardIndices;
+      const discardCards = indices.map(i => state.handCards[i]).filter(Boolean);
+
+      // ── Joker state auto-update ──────────────────────────────
+      const jokerDeltas = computeDiscardJokerDeltas(state, discardCards);
+      const newOverrides = { ...state.jokerStateOverrides, ...jokerDeltas };
+
+      // ── Burnt Joker hand level upgrade ───────────────────────
+      let newHandLevels = state.handLevels;
+      const burntUpgrade = resolveBurntJokerUpgrade(state, discardCards);
+      if (burntUpgrade) {
+        newHandLevels = {
+          ...state.handLevels,
+          [burntUpgrade]: (state.handLevels[burntUpgrade] ?? 1) + 1,
+        };
+      }
+
+      // ── Universe A: Seeded deterministic draw ────────────────
+      if (state.seed) {
+        const rng = createRng(state.seed + '_discard_' + state.discardsUsed);
+        const { cards: drawnCards, deck: newDeck } = drawHand(
+          state.deckComposition,
+          discardCards.length,
+          rng,
+        );
+
+        // Place kept cards in original positions, fill discard slots with drawn cards
+        const newHandCards: Card[] = [];
+        let drawnIdx = 0;
+        for (let i = 0; i < state.handCards.length; i++) {
+          if (indices.includes(i)) {
+            newHandCards.push(drawnCards[drawnIdx] ?? createFogCard());
+            drawnIdx++;
+          } else {
+            newHandCards.push(state.handCards[i]);
+          }
+        }
+
+        return {
+          ...state,
+          handCards: newHandCards,
+          discardsUsed: state.discardsUsed + 1,
+          deckComposition: newDeck,
+          handLevels: newHandLevels,
+          jokerStateOverrides: newOverrides,
+        };
+      }
+
+      // ── Universe B: Unseeded fog placeholders ────────────────
+      const fogHandCards: Card[] = [];
+      for (let i = 0; i < state.handCards.length; i++) {
+        if (indices.includes(i)) {
+          fogHandCards.push(createFogCard());
+        } else {
+          fogHandCards.push(state.handCards[i]);
+        }
+      }
+
+      return {
+        ...state,
+        handCards: fogHandCards,
+        discardsUsed: state.discardsUsed + 1,
+        handLevels: newHandLevels,
+        jokerStateOverrides: newOverrides,
+      };
+    }
+
     case 'RESET_FORM':
       return createInitialState();
 
@@ -386,6 +595,10 @@ export function useGameState() {
 
   const setHandCard = useCallback((index: number, card: Card) => {
     dispatch({ type: 'SET_HAND_CARD', index, card });
+  }, []);
+
+  const setHandCards = useCallback((cards: Card[]) => {
+    dispatch({ type: 'SET_HAND_CARDS', cards });
   }, []);
 
   const addJoker = useCallback((jokerId: string) => {
@@ -480,6 +693,18 @@ export function useGameState() {
     dispatch({ type: 'APPLY_DECK_PRESET', preset });
   }, []);
 
+  const setSeed = useCallback((seed: string | null) => {
+    dispatch({ type: 'SET_SEED', seed });
+  }, []);
+
+  const setJokerStateOverride = useCallback((index: number, value: number) => {
+    dispatch({ type: 'SET_JOKER_STATE_OVERRIDE', index, value });
+  }, []);
+
+  const applyDiscardSuggestion = useCallback((discardIndices: number[]) => {
+    dispatch({ type: 'APPLY_DISCARD_SUGGESTION', discardIndices });
+  }, []);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET_FORM' });
   }, []);
@@ -493,6 +718,7 @@ export function useGameState() {
     effectiveMaxDiscards: getEffectiveMaxDiscards(state),
     effectiveHandSize: getEffectiveHandSize(state),
     setHandCard,
+    setHandCards,
     addJoker,
     removeJoker,
     reorderJokers,
@@ -507,6 +733,9 @@ export function useGameState() {
     updateDeckCard: updateDeckCardCb,
     batchUpdateDeckCards: batchUpdateDeckCardsCb,
     applyDeckPreset: applyDeckPresetCb,
+    setSeed,
+    setJokerStateOverride,
+    applyDiscardSuggestion,
     reset,
     buildState,
   };

@@ -1726,6 +1726,40 @@ input, select { font-family: inherit; }
   font-style: italic;
 }
 
+/* Apply button */
+
+.discard-panel__apply-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(72, 187, 120, 0.15);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.discard-panel__apply-btn:hover:not(:disabled) {
+  background: rgba(72, 187, 120, 0.3);
+  color: #68d391;
+}
+
+.discard-panel__apply-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: var(--border);
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+/* Fog card styling */
+.card--fog {
+  border-style: dashed !important;
+  opacity: 0.6;
+}
+
 /* Meta footer */
 
 .discard-panel__meta {
@@ -1960,4 +1994,176 @@ input, select { font-family: inherit; }
 
 .run-sim__final--lost {
   color: var(--accent-red);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Card Notation Input
+   ═══════════════════════════════════════════════════════════════ */
+
+.card-notation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card-notation__input {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.card-notation__input:focus {
+  border-color: var(--accent-blue);
+}
+
+.card-notation__input::placeholder {
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.card-notation__errors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--accent-red);
+  font-size: 13px;
+}
+
+.card-notation__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.card-notation__parse-btn {
+  padding: 6px 18px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.card-notation__parse-btn:hover {
+  background: var(--accent-blue-hover);
+}
+
+.card-notation__mult-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.card-notation__cheat-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+
+.card-notation__cheat-toggle:hover {
+  color: var(--text-primary);
+}
+
+/* Cheat Sheet */
+
+.notation-cheat-sheet {
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.notation-cheat-sheet__desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.notation-cheat-sheet__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.notation-cheat-sheet__col h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--accent-yellow);
+  font-weight: 600;
+}
+
+.notation-cheat-sheet__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.notation-cheat-sheet__table td {
+  padding: 2px 6px 2px 0;
+  font-size: 13px;
+}
+
+.notation-code {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent-blue);
+  white-space: nowrap;
+  width: 28px;
+}
+
+.notation-label {
+  color: var(--text-secondary);
+}
+
+/* Hand Cards Mode Tabs */
+
+.hand-cards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hand-cards-mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.hand-cards-mode-tab {
+  padding: 3px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hand-cards-mode-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.hand-cards-mode-tab--active {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
 }

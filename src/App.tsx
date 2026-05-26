@@ -20,30 +20,32 @@ function App() {
   const discardAnalysis = useDiscardAnalysis();
   const runSim = useRunSimulation();
 
-  const [jokerStateOverrides, setJokerStateOverrides] = useState<Record<number, number>>({});
-
   const handleJokerStateChange = useCallback((index: number, value: number) => {
-    setJokerStateOverrides(prev => ({ ...prev, [index]: value }));
-  }, []);
+    gameState.setJokerStateOverride(index, value);
+  }, [gameState.setJokerStateOverride]);
+
+  const handleApplyDiscardSuggestion = useCallback((discardIndices: number[]) => {
+    gameState.applyDiscardSuggestion(discardIndices);
+  }, [gameState.applyDiscardSuggestion]);
 
   const handleCompute = useCallback(() => {
     search.search(gameState.form, {
       includeJokerOrdering: true,
       maxComputationMs: 10000,
     }, {
-      jokerStateOverrides,
+      jokerStateOverrides: gameState.form.jokerStateOverrides,
     });
     setTab('results');
-  }, [gameState.form, jokerStateOverrides, search]);
+  }, [gameState.form, search]);
 
   const handleAnalyzeDiscards = useCallback(() => {
     discardAnalysis.analyze(gameState.form, {
       includeJokerOrdering: true,
       maxComputationMs: 10000,
     }, {
-      jokerStateOverrides,
+      jokerStateOverrides: gameState.form.jokerStateOverrides,
     });
-  }, [gameState.form, jokerStateOverrides, discardAnalysis]);
+  }, [gameState.form, discardAnalysis]);
 
   const handleRunSimulation = useCallback((config: Parameters<typeof runSim.run>[1]) => {
     runSim.run(gameState.form, config);
@@ -113,6 +115,7 @@ function App() {
             effectiveMaxDiscards={gameState.effectiveMaxDiscards}
             effectiveHandSize={gameState.effectiveHandSize}
             onUpdateCard={gameState.setHandCard}
+            onParseNotation={gameState.setHandCards}
             onAddJoker={gameState.addJoker}
             onRemoveJoker={gameState.removeJoker}
             onReorderJokers={gameState.reorderJokers}
@@ -122,7 +125,7 @@ function App() {
             onSetBossEffect={gameState.setBossEffect}
             onCompute={handleCompute}
             computing={search.status === 'computing'}
-            jokerStateOverrides={jokerStateOverrides}
+            jokerStateOverrides={gameState.form.jokerStateOverrides}
             onJokerStateChange={handleJokerStateChange}
             onSetDeckComposition={gameState.setDeckComposition}
             onResetDeckToStandard={gameState.resetDeckToStandard}
@@ -140,6 +143,9 @@ function App() {
             status={discardAnalysis.status}
             error={discardAnalysis.error}
             onAnalyze={handleAnalyzeDiscards}
+            onApplyDiscard={handleApplyDiscardSuggestion}
+            discardsLeft={gameState.effectiveMaxDiscards - gameState.form.discardsUsed}
+            activeBossEffect={gameState.form.activeBossEffect}
           />
         )}
 

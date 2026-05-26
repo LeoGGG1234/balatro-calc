@@ -18,5 +18,8 @@ export * from './run-simulator';
 export * from './boss-data';
 export * from './economy';
 export { combinations } from './combo-utils';
+export { parseCardNotation, parseCardNotations, getNotationCheatSheet } from './card-parser';
+export { computeFogCardEV } from './fog-ev';
+export type { FogCardEVResult, FogEVConfig } from './fog-ev';
 export { createRng, hashSeedString } from './rng';
 export type { RngFn } from './rng';

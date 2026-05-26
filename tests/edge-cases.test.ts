@@ -2246,3 +2246,415 @@ describe('Edge Case #15: Midas Mask + Vampire — real-time enhancement swap', (
     expect(vampXMult).toBe(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+//  Test 16 — Apply Discard Suggestion: Dual-Universe State Evolution
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  formReducer, computeDiscardJokerDeltas, getEffectiveMaxDiscards,
+  type GameStateForm as GSForm,
+} from '../src/hooks/useGameState';
+import { isFogCard } from '../src/engine/types';
+import { computeFogCardEV } from '../src/engine/fog-ev';
+
+describe('Edge Case #16: Apply Discard Suggestion — dual-universe state evolution', () => {
+  // ── Helpers ──────────────────────────────────────────────────
+
+  function mkForm(overrides: Partial<GSForm> = {}): GSForm {
+    const handCards = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.King, Suit.Hearts),
+      card(Rank.Queen, Suit.Diamonds),
+      card(Rank.Jack, Suit.Clubs),
+      card(Rank.Ten, Suit.Spades),
+      card(Rank.Nine, Suit.Hearts),
+      card(Rank.Eight, Suit.Diamonds),
+      card(Rank.Seven, Suit.Clubs),
+    ];
+    const defaultLevels = {} as Record<HandType, number>;
+    for (const ht of Object.values(HandType)) {
+      defaultLevels[ht] = 1;
+    }
+    return {
+      handCards,
+      jokers: [],
+      handLevels: defaultLevels,
+      blindType: BlindType.Small,
+      blindChips: 300,
+      blindDebuffedRanks: [],
+      blindDebuffedSuits: [],
+      antes: 1,
+      handsPlayed: 0,
+      discardsUsed: 0,
+      isFinalHand: false,
+      deckComposition: createStandardDeck(),
+      dollars: 0,
+      maxHandsBase: 4,
+      maxDiscardsBase: 3,
+      handSizeBase: 8,
+      activeVouchers: [],
+      activeBossEffect: null,
+      seed: null,
+      jokerStateOverrides: {},
+      ...overrides,
+    };
+  }
+
+  // ── Sub-Test A: Universe B (unseeded) — fog card creation ───
+
+  describe('Universe B: Fog card creation (unseeded)', () => {
+    it('replaces discarded cards with fog placeholders', () => {
+      const form = mkForm();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1, 2],
+      });
+
+      // Cards at indices 0,1,2 are now fog; 3-7 are original
+      expect(isFogCard(next.handCards[0])).toBe(true);
+      expect(isFogCard(next.handCards[1])).toBe(true);
+      expect(isFogCard(next.handCards[2])).toBe(true);
+      expect(isFogCard(next.handCards[3])).toBe(false);
+      expect(isFogCard(next.handCards[7])).toBe(false);
+
+      // Kept cards preserved
+      expect(next.handCards[3].rank).toBe(Rank.Jack);
+      expect(next.handCards[3].suit).toBe(Suit.Clubs);
+      expect(next.handCards[7].rank).toBe(Rank.Seven);
+      expect(next.handCards[7].suit).toBe(Suit.Clubs);
+    });
+
+    it('increments discardsUsed', () => {
+      const form = mkForm();
+      expect(form.discardsUsed).toBe(0);
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      expect(next.discardsUsed).toBe(1);
+    });
+
+    it('preserves hand size (8 cards total)', () => {
+      const form = mkForm();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      expect(next.handCards.length).toBe(8);
+    });
+
+    it('fog cards have fog=true and unique IDs', () => {
+      const form = mkForm();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      expect(next.handCards[0].fog).toBe(true);
+      expect(next.handCards[1].fog).toBe(true);
+      expect(next.handCards[0].id).not.toBe(next.handCards[1].id);
+      expect(next.handCards[0].id).toContain('fog_');
+    });
+  });
+
+  // ── Sub-Test B: Universe A (seeded) — deterministic draw ─────
+
+  describe('Universe A: Seeded deterministic draw', () => {
+    it('draws replacement cards from deck deterministically', () => {
+      const standardDeck = createStandardDeck();
+      // Draw initial 8 cards to simulate being dealt a hand
+      const initialDraw = drawHand(standardDeck, 8, createRng('test_seed'));
+      const handCards = initialDraw.cards;
+
+      const form = mkForm({
+        handCards,
+        deckComposition: initialDraw.deck,
+        seed: 'test_seed',
+      });
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      // discardsUsed incremented
+      expect(next.discardsUsed).toBe(1);
+      // Hand size maintained
+      expect(next.handCards.length).toBe(8);
+      // Cards at indices 0,1 are NOT fog (they're real drawn cards)
+      expect(isFogCard(next.handCards[0])).toBe(false);
+      expect(isFogCard(next.handCards[1])).toBe(false);
+      // Cards 0,1 have valid ranks/suits from deck
+      expect(next.handCards[0].rank).toBeDefined();
+      expect(next.handCards[0].suit).toBeDefined();
+      // Deck size decreased by 2
+      expect(next.deckComposition.totalCards).toBe(initialDraw.deck.totalCards - 2);
+    });
+
+    it('produces identical results for the same seed and discard indices', () => {
+      const deck1 = createStandardDeck();
+      const draw1 = drawHand(deck1, 8, createRng('deterministic_test'));
+      const deck2 = createStandardDeck();
+      const draw2 = drawHand(deck2, 8, createRng('deterministic_test'));
+
+      const form1 = mkForm({
+        handCards: draw1.cards,
+        deckComposition: draw1.deck,
+        seed: 'deterministic_test',
+      });
+      const form2 = mkForm({
+        handCards: draw2.cards,
+        deckComposition: draw2.deck,
+        seed: 'deterministic_test',
+      });
+
+      const next1 = formReducer(form1, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [3, 5],
+      });
+      const next2 = formReducer(form2, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [3, 5],
+      });
+
+      // Same seed + same indices → same drawn cards
+      expect(next1.handCards[3].rank).toBe(next2.handCards[3].rank);
+      expect(next1.handCards[3].suit).toBe(next2.handCards[3].suit);
+      expect(next1.handCards[5].rank).toBe(next2.handCards[5].rank);
+      expect(next1.handCards[5].suit).toBe(next2.handCards[5].suit);
+    });
+  });
+
+  // ── Sub-Test C: Edge cases ──────────────────────────────────
+
+  describe('Edge cases: Water boss & zero discards', () => {
+    it('refuses to apply when discardsLeft is 0', () => {
+      const form = mkForm({ discardsUsed: 3 }); // maxDiscardsBase=3, used=3 → left=0
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      // State unchanged (no discard applied)
+      expect(next.discardsUsed).toBe(3);
+      expect(isFogCard(next.handCards[0])).toBe(false);
+    });
+
+    it('refuses to apply when activeBossEffect is the_water', () => {
+      // The Water sets max discards to 0
+      const form = mkForm({
+        activeBossEffect: 'the_water',
+        discardsUsed: 0, // 0 used, but boss sets max to 0
+      });
+
+      const maxDiscards = getEffectiveMaxDiscards(form);
+      expect(maxDiscards).toBe(0); // Water boss → 0 max discards
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      // State unchanged
+      expect(next.discardsUsed).toBe(0);
+      expect(isFogCard(next.handCards[0])).toBe(false);
+    });
+
+    it('handles partial discard correctly (discard 5 keep 3)', () => {
+      const form = mkForm();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1, 2, 3, 4],
+      });
+
+      // 5 fog cards + 3 originals = 8
+      const fogCount = next.handCards.filter(c => isFogCard(c)).length;
+      expect(fogCount).toBe(5);
+      expect(next.handCards.length).toBe(8);
+    });
+
+    it('handles discard of single card correctly', () => {
+      const form = mkForm();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0],
+      });
+
+      expect(isFogCard(next.handCards[0])).toBe(true);
+      expect(isFogCard(next.handCards[1])).toBe(false);
+      expect(next.discardsUsed).toBe(1);
+    });
+  });
+
+  // ── Sub-Test D: Joker state auto-update on discard ──────────
+
+  describe('Joker state auto-update on discard', () => {
+    it('Castle gains +3 chips per discard', () => {
+      const form = mkForm({
+        jokers: [{ id: 'castle', edition: CardEdition.None }],
+        jokerStateOverrides: { 0: 6 },
+      });
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      expect(next.jokerStateOverrides[0]).toBe(9); // 6 + 3
+    });
+
+    it('Green Joker loses 1 mult per discard', () => {
+      const form = mkForm({
+        jokers: [{ id: 'green_joker', edition: CardEdition.None }],
+        jokerStateOverrides: { 0: 10 },
+      });
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0],
+      });
+
+      expect(next.jokerStateOverrides[0]).toBe(9); // 10 - 1
+    });
+
+    it('Green Joker does not go below 0', () => {
+      const form = mkForm({
+        jokers: [{ id: 'green_joker', edition: CardEdition.None }],
+        jokerStateOverrides: { 0: 0 },
+      });
+
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0],
+      });
+
+      expect(next.jokerStateOverrides[0]).toBe(0);
+    });
+
+    it('Faceless gains +5 mult per face card discarded', () => {
+      const form = mkForm({
+        jokers: [{ id: 'faceless', edition: CardEdition.None }],
+        jokerStateOverrides: { 0: 0 },
+      });
+
+      // Discard indices 0-2: Ace Spades (not face), King Hearts (face), Queen Diamonds (face)
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1, 2],
+      });
+
+      // 2 face cards → +10 mult
+      expect(next.jokerStateOverrides[0]).toBe(10);
+    });
+
+    it('Hit the Road gains +0.5 xMult per Jack discarded', () => {
+      const form = mkForm({
+        jokers: [{ id: 'hit_the_road', edition: CardEdition.None }],
+        jokerStateOverrides: { 0: 1 },
+      });
+
+      // Discard index 3: Jack Clubs
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [3],
+      });
+
+      expect(next.jokerStateOverrides[0]).toBe(1.5); // 1 + 0.5
+    });
+
+    it('computeDiscardJokerDeltas returns correct deltas', () => {
+      const form = mkForm({
+        jokers: [
+          { id: 'castle', edition: CardEdition.None },
+          { id: 'green_joker', edition: CardEdition.None },
+        ],
+        jokerStateOverrides: { 0: 10, 1: 5 },
+      });
+
+      const discardCards = [form.handCards[0], form.handCards[1]];
+      const deltas = computeDiscardJokerDeltas(form, discardCards);
+
+      // Castle: 10 + 3 = 13
+      expect(deltas[0]).toBe(13);
+      // Green Joker: 5 - 1 = 4
+      expect(deltas[1]).toBe(4);
+    });
+  });
+
+  // ── Sub-Test E: Fog card EV computation ──────────────────────
+
+  describe('Fog card EV computation', () => {
+    it('returns null when no fog cards are present', () => {
+      const handCards = [
+        card(Rank.Ace, Suit.Spades),
+        card(Rank.King, Suit.Hearts),
+        card(Rank.Queen, Suit.Diamonds),
+        card(Rank.Jack, Suit.Clubs),
+        card(Rank.Ten, Suit.Spades),
+        card(Rank.Nine, Suit.Hearts),
+        card(Rank.Eight, Suit.Diamonds),
+        card(Rank.Seven, Suit.Clubs),
+      ];
+
+      const state: GameState = {
+        ...defaultState(handCards, ['joker']),
+        deckComposition: createStandardDeck(),
+      };
+
+      const result = computeFogCardEV(state);
+      expect(result).toBeNull();
+    });
+
+    it('computes EV for a hand with fog cards', () => {
+      const deck = createStandardDeck();
+      const initialDraw = drawHand(deck, 8, createRng('fog_ev_test'));
+
+      // Replace 2 cards with fog
+      const handWithFog = [...initialDraw.cards];
+      handWithFog[0] = { ...handWithFog[0], id: 'fog_0', fog: true };
+      handWithFog[1] = { ...handWithFog[1], id: 'fog_1', fog: true };
+
+      const state: GameState = {
+        ...defaultState(handWithFog, ['joker']),
+        deckComposition: initialDraw.deck,
+      };
+
+      const result = computeFogCardEV(state, {}, {}, { maxExactCombinations: 200 });
+      expect(result).not.toBeNull();
+      expect(result!.expectedScore).toBeGreaterThan(0);
+      expect(result!.samplesEvaluated).toBeGreaterThan(0);
+      expect(result!.handProbabilities).toBeDefined();
+      // At least one hand type should have >0 probability
+      const totalProb = Object.values(result!.handProbabilities).reduce((a, b) => a + b, 0);
+      expect(totalProb).toBeGreaterThan(0);
+    });
+
+    it('returns null when deck has no cards', () => {
+      const handCards = [
+        card(Rank.Ace, Suit.Spades),
+        card(Rank.King, Suit.Hearts),
+      ];
+      handCards[0]!.fog = true;
+
+      const state: GameState = {
+        ...defaultState(handCards),
+        deckComposition: { totalCards: 0, remainingByRank: {}, remainingBySuit: {} },
+      };
+
+      const result = computeFogCardEV(state);
+      expect(result).toBeNull();
+    });
+
+    it('isFogCard helper correctly identifies fog vs real cards', () => {
+      const realCard = card(Rank.Ace, Suit.Spades);
+      const fogCard: Card = { ...card(Rank.Two, Suit.Hearts), fog: true };
+
+      expect(isFogCard(realCard)).toBe(false);
+      expect(isFogCard(fogCard)).toBe(true);
+    });
+  });
+});
