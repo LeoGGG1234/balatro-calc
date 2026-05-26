@@ -46,12 +46,12 @@ export function calculateJokerIncome(input: JokerIncomeInput): number {
         income += 2 * (input.maxDiscards - input.discardsUsed);
         break;
       case 'cloud_9': {
-        const nineCount = input.deck.remainingByRank[Rank.Nine] ?? 0;
+        const nineCount = input.deck.totalByRank?.[Rank.Nine] ?? input.deck.remainingByRank[Rank.Nine] ?? 0;
         income += nineCount;
         break;
       }
       case 'rough_gem': {
-        const diamondCount = input.deck.remainingBySuit[Suit.Diamonds] ?? 0;
+        const diamondCount = input.deck.totalBySuit?.[Suit.Diamonds] ?? input.deck.remainingBySuit[Suit.Diamonds] ?? 0;
         income += diamondCount;
         break;
       }

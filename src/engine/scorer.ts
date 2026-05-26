@@ -1,7 +1,7 @@
 import type {
   Card, GameState, PlayCandidate, ScoringBreakdown, ScoreAccumulator,
   CardScoredContext, JokerEvaluateContext, HeldInHandContext,
-  JokerInstance, JokerModifiers,
+  JokerInstance, JokerModifiers, JokerDefinition,
 } from './types';
 import {
   isFaceCard, isNumberCard, isStone, CardEdition, Seal,
@@ -16,6 +16,8 @@ import { type JokerStateOverrides } from './joker-data';
 export interface ScoreOptions {
   jokerStateOverrides?: JokerStateOverrides;
   jokerModifiers?: JokerModifiers;
+  /** Pre-built joker definition map (hoisted from search to avoid rebuild per candidate) */
+  jokerDefs?: Map<string, JokerDefinition | undefined>;
 }
 
 export function scorePlay(
@@ -24,8 +26,11 @@ export function scorePlay(
   options: ScoreOptions = {}
 ): ScoringBreakdown {
   const { playedCards, heldCards, handType, jokerOrder } = candidate;
-  const { jokerModifiers } = options;
+  const { jokerModifiers, jokerDefs: prebuiltDefs } = options;
   const handLevel = state.handLevels[handType] ?? 1;
+
+  // Validate joker order indices against current joker count (defensive)
+  const validJokerOrder = jokerOrder.filter(i => i >= 0 && i < state.jokers.length);
 
   const breakdown: ScoringBreakdown = {
     baseHand: {
@@ -36,7 +41,7 @@ export function scorePlay(
     },
     cardScores: [],
     heldInHandMult: 1,
-    jokerScores: jokerOrder.map(i => ({
+    jokerScores: validJokerOrder.map(i => ({
       jokerId: state.jokers[i]?.id ?? 'empty',
       jokerIndex: i,
       chipsAdded: 0,
@@ -53,12 +58,12 @@ export function scorePlay(
     mult: breakdown.baseHand.mult,
   };
 
-  // Resolve joker order for this candidate
-  const orderedJokers = jokerOrder.map(i => state.jokers[i]);
+  // Resolve joker order for this candidate (only valid indices)
+  const orderedJokers = validJokerOrder.map(i => state.jokers[i]);
   const allFace = jokerModifiers?.allCardsFace ?? false;
 
-  // Pre-resolve joker definitions for the scoring hot path
-  const jokerDefs = new Map(state.jokers.map(j => [j.id, getJoker(j.id)] as const));
+  // Use pre-built joker defs from search if available, otherwise build on demand
+  const jokerDefs = prebuiltDefs ?? new Map(state.jokers.map(j => [j.id, getJoker(j.id)] as const));
   const getDef = (id: string) => jokerDefs.get(id);
 
   // ─── Phase 1: Played Card Scoring ────────────────────────────

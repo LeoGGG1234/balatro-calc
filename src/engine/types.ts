@@ -186,6 +186,9 @@ export interface DeckComposition {
   totalCards: number;      // cards remaining in deck (not hand, not played this round)
   remainingByRank: Partial<Record<Rank, number>>;
   remainingBySuit: Partial<Record<Suit, number>>;
+  /** Full-deck counts (including drawn/discarded/played cards). Used by Cloud 9, Rough Gem, etc. */
+  totalByRank?: Partial<Record<Rank, number>>;
+  totalBySuit?: Partial<Record<Suit, number>>;
   enhancementCounts?: Partial<Record<CardEnhancement, number>>;
   editionCounts?: Partial<Record<CardEdition, number>>;
   sealCounts?: Partial<Record<Seal, number>>;

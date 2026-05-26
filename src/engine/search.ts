@@ -5,6 +5,7 @@ import type {
 import { HandType } from './types';
 import { recognizeHand } from './hand-evaluator';
 import { getJokerModifiers } from './joker-data';
+import { getJoker } from './joker-effects';
 import type { ScoreOptions } from './scorer';
 import { scorePlay } from './scorer';
 import {
@@ -110,6 +111,9 @@ export function findOptimalPlays(
     }
   }
 
+  // Pre-build joker definition map so scorePlay doesn't rebuild it per candidate
+  const jokerDefs = new Map(state.jokers.map(j => [j.id, getJoker(j.id)] as const));
+
   // Step 3: Score each candidate
   const scoredPlays: ScoredPlay[] = [];
   let evaluated = 0;
@@ -120,7 +124,7 @@ export function findOptimalPlays(
     // Early termination check
     if (performance.now() - startTime > cfg.maxComputationMs) break;
 
-    const breakdown = scorePlay(state, candidate, { ...options, jokerModifiers });
+    const breakdown = scorePlay(state, candidate, { ...options, jokerModifiers, jokerDefs });
     evaluated++;
 
     // Progress reporting (~every 16ms to avoid flooding the message channel)

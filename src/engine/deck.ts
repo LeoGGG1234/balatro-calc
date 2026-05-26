@@ -10,6 +10,8 @@ export function buildAggregateFromCards(cards: DeckCardSlot[]): {
   totalCards: number;
   remainingByRank: Partial<Record<Rank, number>>;
   remainingBySuit: Partial<Record<Suit, number>>;
+  totalByRank: Partial<Record<Rank, number>>;
+  totalBySuit: Partial<Record<Suit, number>>;
   enhancementCounts: Partial<Record<CardEnhancement, number>>;
   editionCounts: Partial<Record<CardEdition, number>>;
   sealCounts: Partial<Record<Seal, number>>;
@@ -32,6 +34,8 @@ export function buildAggregateFromCards(cards: DeckCardSlot[]): {
     totalCards: cards.length,
     remainingByRank: rankCounts,
     remainingBySuit: suitCounts,
+    totalByRank: { ...rankCounts },
+    totalBySuit: { ...suitCounts },
     enhancementCounts: enhCounts,
     editionCounts: edCounts,
     sealCounts: sealCounts,

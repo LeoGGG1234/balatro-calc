@@ -121,6 +121,8 @@ function drawHandFromCards(
     deck: {
       ...buildAggregateFromCards(remaining),
       cards: remaining,
+      totalByRank: deck.totalByRank,
+      totalBySuit: deck.totalBySuit,
     },
   };
 }
@@ -233,6 +235,8 @@ function cloneGameState(state: GameState): GameState {
       ...state.deckComposition,
       remainingByRank: { ...state.deckComposition.remainingByRank },
       remainingBySuit: { ...state.deckComposition.remainingBySuit },
+      totalByRank: state.deckComposition.totalByRank ? { ...state.deckComposition.totalByRank } : undefined,
+      totalBySuit: state.deckComposition.totalBySuit ? { ...state.deckComposition.totalBySuit } : undefined,
       enhancementCounts: { ...state.deckComposition.enhancementCounts },
       editionCounts: { ...state.deckComposition.editionCounts },
       sealCounts: { ...state.deckComposition.sealCounts },
@@ -623,6 +627,14 @@ export function simulateRun(
             cardsScoredThisAnte.add(card.id);
           }
         }
+
+        // Remove played cards from hand and draw replacements
+        currentHandCards = currentHandCards.filter(
+          c => !optimal.playedCards.some(p => p.id === c.id),
+        );
+        const redrawAfterPlay = drawHand(currentDeck, bctx.handSize - currentHandCards.length, rng);
+        currentHandCards = [...currentHandCards, ...redrawAfterPlay.cards];
+        currentDeck = redrawAfterPlay.deck;
 
         // Try discarding if available
         if (discardsUsed < bctx.maxDiscards) {
