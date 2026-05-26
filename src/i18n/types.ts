@@ -1,4 +1,4 @@
-import type { HandType, JokerRarity, CardEnhancement, Seal, BlindType } from '../engine/types';
+import type { HandType, JokerRarity, CardEnhancement, CardEdition, Seal, BlindType } from '../engine/types';
 
 export interface Translations {
   // App
@@ -71,8 +71,8 @@ export interface Translations {
   enhancementsLong: Record<CardEnhancement, string>;
 
   // Edition labels
-  editions: Record<string, string>;
-  editionsLong: Record<string, string>;
+  editions: Record<CardEdition, string>;
+  editionsLong: Record<CardEdition, string>;
 
   // Seal labels
   seals: Record<Seal, string>;
@@ -149,11 +149,19 @@ export interface Translations {
     removeCard: string;
     quickMode: string;
     fullMode: string;
+    visualMode: string;
     addSpecificCard: string;
     removeSpecificCard: string;
     enhancement: string;
     edition: string;
     seal: string;
+    presetAbandoned: string;
+    presetCheckered: string;
+    batchApply: string;
+    clearModifiers: string;
+    addDuplicate: string;
+    removeOne: string;
+    noCards: string;
   };
 
   // Discard
@@ -178,6 +186,7 @@ export interface Translations {
       maxAntes: string;
       enableShop: string;
       randomBosses: string;
+      seed: string;
     };
     runButton: string;
     running: string;

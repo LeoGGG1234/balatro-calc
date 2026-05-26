@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { SearchResult, SearchConfig } from '../engine/types';
 import type { ScoreOptions } from '../engine/scorer';
 import { buildGameState, type GameStateForm } from './useGameState';
@@ -23,13 +23,6 @@ export function useSearch() {
 
   const computingRef = useRef(false);
 
-  // Cleanup: terminate worker on unmount
-  useEffect(() => {
-    const client = getSearchClient();
-    return () => {
-      client.terminate();
-    };
-  }, []);
 
   const search = useCallback(async (
     form: GameStateForm,

@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from 'react';
+import { useReducer, useCallback, useMemo } from 'react';
 import type {
   Card, JokerInstance, HandLevels, GameState,
   DeckComposition, RoundState, GameFlags,
@@ -9,7 +9,9 @@ import {
 } from '../engine/types';
 import { getDefaultHandLevels } from '../engine/constants';
 import { getJokerRoundModifiers } from '../engine/joker-data';
-import { createStandardDeck, addCardToDeck, removeCardFromDeck } from '../engine/deck';
+import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, batchUpdateDeckCards, applyDeckPreset } from '../engine/deck';
+import type { DeckCardSlot, DeckCardFilter } from '../engine/types';
+import type { DeckPreset } from '../engine/deck';
 
 // ─── Voucher / Boss Modifier Presets ──────────────────────────
 
@@ -62,6 +64,11 @@ export const ALL_BOSS_EFFECTS: BossEffectDef[] = [
   { id: 'the_pillar', nameKey: 'shop.bossEffectNames.the_pillar' },
   { id: 'the_flint', nameKey: 'shop.bossEffectNames.the_flint' },
   { id: 'the_manacle', nameKey: 'shop.bossEffectNames.the_manacle' },
+  { id: 'violet_vessel', nameKey: 'shop.bossEffectNames.violet_vessel' },
+  { id: 'verdant_leaf', nameKey: 'shop.bossEffectNames.verdant_leaf' },
+  { id: 'crimson_heart', nameKey: 'shop.bossEffectNames.crimson_heart' },
+  { id: 'cerulean_bell', nameKey: 'shop.bossEffectNames.cerulean_bell' },
+  { id: 'amber_acorn', nameKey: 'shop.bossEffectNames.amber_acorn' },
 ];
 
 // ─── Compute effective values from modifiers ──────────────────
@@ -110,7 +117,7 @@ function computeEffectiveHandSize(
   }
   const jm = getJokerRoundModifiers(jokers);
   val += jm.handSizeBonus;
-  return Math.max(5, val);
+  return Math.max(1, val);
 }
 
 // ─── Form State Type ───────────────────────────────────────────
@@ -161,6 +168,9 @@ export type FormAction =
   | { type: 'SET_HAND_SIZE_BASE'; value: number }
   | { type: 'TOGGLE_VOUCHER'; voucherId: string }
   | { type: 'SET_BOSS_EFFECT'; bossId: string | null }
+  | { type: 'UPDATE_DECK_CARD'; slotIndex: number; updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>> }
+  | { type: 'BATCH_UPDATE_DECK_CARDS'; filter: DeckCardFilter; updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>> }
+  | { type: 'APPLY_DECK_PRESET'; preset: DeckPreset }
   | { type: 'RESET_FORM' };
 
 // ─── Initial State ─────────────────────────────────────────────
@@ -314,6 +324,15 @@ function formReducer(state: GameStateForm, action: FormAction): GameStateForm {
     case 'SET_BOSS_EFFECT':
       return { ...state, activeBossEffect: action.bossId === 'none' ? null : action.bossId };
 
+    case 'UPDATE_DECK_CARD':
+      return { ...state, deckComposition: updateDeckCard(state.deckComposition, action.slotIndex, action.updates) };
+
+    case 'BATCH_UPDATE_DECK_CARDS':
+      return { ...state, deckComposition: batchUpdateDeckCards(state.deckComposition, action.filter, action.updates) };
+
+    case 'APPLY_DECK_PRESET':
+      return { ...state, deckComposition: applyDeckPreset(action.preset) };
+
     case 'RESET_FORM':
       return createInitialState();
 
@@ -449,11 +468,24 @@ export function useGameState() {
     dispatch({ type: 'REMOVE_CARD_FROM_DECK', rank, suit });
   }, []);
 
+  const updateDeckCardCb = useCallback((slotIndex: number, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => {
+    dispatch({ type: 'UPDATE_DECK_CARD', slotIndex, updates });
+  }, []);
+
+  const batchUpdateDeckCardsCb = useCallback((filter: DeckCardFilter, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => {
+    dispatch({ type: 'BATCH_UPDATE_DECK_CARDS', filter, updates });
+  }, []);
+
+  const applyDeckPresetCb = useCallback((preset: DeckPreset) => {
+    dispatch({ type: 'APPLY_DECK_PRESET', preset });
+  }, []);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET_FORM' });
   }, []);
 
-  const buildState = useCallback(() => buildGameState(state), [state]);
+  const gameState = useMemo(() => buildGameState(state), [state]);
+  const buildState = useCallback(() => gameState, [gameState]);
 
   return {
     form: state,
@@ -472,6 +504,9 @@ export function useGameState() {
     resetDeckToStandard,
     addCardToDeck: addCardToDeckCb,
     removeCardFromDeck: removeCardFromDeckCb,
+    updateDeckCard: updateDeckCardCb,
+    batchUpdateDeckCards: batchUpdateDeckCardsCb,
+    applyDeckPreset: applyDeckPresetCb,
     reset,
     buildState,
   };
