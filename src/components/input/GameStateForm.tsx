@@ -1,8 +1,9 @@
 import { useI18n } from '../../i18n/context';
-import { BlindType } from '../../engine/types';
-import type { DeckComposition } from '../../engine/types';
+import { BlindType, HandType } from '../../engine/types';
+import type { Card, DeckComposition, DeckCardSlot, DeckCardFilter } from '../../engine/types';
 import { Rank, Suit, CardEnhancement, CardEdition, Seal } from '../../engine/types';
 import type { GameStateForm as GSMForm } from '../../hooks/useGameState';
+import type { DeckPreset } from '../../engine/deck';
 import { ALL_VOUCHERS, ALL_BOSS_EFFECTS } from '../../hooks/useGameState';
 import { HandCardsInput } from './HandCardsInput';
 import { JokerInput } from './JokerInput';
@@ -14,12 +15,12 @@ interface GameStateFormProps {
   effectiveMaxHands: number;
   effectiveMaxDiscards: number;
   effectiveHandSize: number;
-  onUpdateCard: (index: number, card: any) => void;
+  onUpdateCard: (index: number, card: Card) => void;
   onAddJoker: (id: string) => void;
   onRemoveJoker: (index: number) => void;
   onReorderJokers: (from: number, to: number) => void;
-  onSetHandLevel: (handType: any, level: number) => void;
-  onUpdateField: (field: any, value: any) => void;
+  onSetHandLevel: (handType: HandType, level: number) => void;
+  onUpdateField: <K extends keyof GSMForm>(field: K, value: GSMForm[K]) => void;
   onToggleVoucher: (voucherId: string) => void;
   onSetBossEffect: (bossId: string | null) => void;
   onCompute: () => void;
@@ -31,6 +32,10 @@ interface GameStateFormProps {
   onResetDeckToStandard: () => void;
   onAddCardToDeck: (rank: Rank, suit: Suit, enhancement?: CardEnhancement, edition?: CardEdition, seal?: Seal) => void;
   onRemoveCardFromDeck: (rank: Rank, suit: Suit) => void;
+  // Visual deck builder
+  onApplyDeckPreset?: (preset: DeckPreset) => void;
+  onUpdateDeckCard?: (slotIndex: number, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => void;
+  onBatchUpdateDeckCards?: (filter: DeckCardFilter, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => void;
 }
 
 export function GameStateForm({
@@ -40,6 +45,7 @@ export function GameStateForm({
   onToggleVoucher, onSetBossEffect,
   computing, jokerStateOverrides, onJokerStateChange,
   onSetDeckComposition, onResetDeckToStandard, onAddCardToDeck, onRemoveCardFromDeck,
+  onApplyDeckPreset, onUpdateDeckCard, onBatchUpdateDeckCards,
 }: GameStateFormProps) {
   const { t } = useI18n();
 
@@ -163,6 +169,9 @@ export function GameStateForm({
           onResetToStandard={onResetDeckToStandard}
           onAddCard={onAddCardToDeck}
           onRemoveCard={onRemoveCardFromDeck}
+          onApplyPreset={onApplyDeckPreset}
+          onUpdateCard={onUpdateDeckCard}
+          onBatchUpdate={onBatchUpdateDeckCards}
         />
       </section>
 

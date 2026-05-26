@@ -128,6 +128,9 @@ function App() {
             onResetDeckToStandard={gameState.resetDeckToStandard}
             onAddCardToDeck={gameState.addCardToDeck}
             onRemoveCardFromDeck={gameState.removeCardFromDeck}
+            onApplyDeckPreset={gameState.applyDeckPreset}
+            onUpdateDeckCard={gameState.updateDeckCard}
+            onBatchUpdateDeckCards={gameState.batchUpdateDeckCards}
           />
         )}
 

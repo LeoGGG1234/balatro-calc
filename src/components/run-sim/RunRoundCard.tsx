@@ -6,7 +6,6 @@ import { JokerBadge } from '../shared/JokerBadge';
 
 interface RunRoundCardProps {
   round: RoundResult;
-  index: number;
 }
 
 export function RunRoundCard({ round }: RunRoundCardProps) {

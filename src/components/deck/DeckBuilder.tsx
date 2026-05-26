@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { useI18n } from '../../i18n/context';
-import type { DeckComposition } from '../../engine/types';
+import type { DeckComposition, DeckCardSlot, DeckCardFilter } from '../../engine/types';
 import { Rank, Suit, CardEnhancement, CardEdition, Seal, ALL_RANKS, ALL_SUITS } from '../../engine/types';
+import type { DeckPreset } from '../../engine/deck';
+import { DeckBuilderVisual } from './DeckBuilderVisual';
+import { SUIT_SYMBOLS, SUIT_COLORS } from '../shared/card-display';
 
-
+type DeckMode = 'quick' | 'list' | 'visual';
 
 interface DeckBuilderProps {
   deck: DeckComposition;
@@ -11,27 +14,18 @@ interface DeckBuilderProps {
   onResetToStandard: () => void;
   onAddCard: (rank: Rank, suit: Suit, enhancement?: CardEnhancement, edition?: CardEdition, seal?: Seal) => void;
   onRemoveCard: (rank: Rank, suit: Suit) => void;
+  // Visual mode callbacks
+  onApplyPreset?: (preset: DeckPreset) => void;
+  onUpdateCard?: (slotIndex: number, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => void;
+  onBatchUpdate?: (filter: DeckCardFilter, updates: Partial<Pick<DeckCardSlot, 'enhancement' | 'edition' | 'seal'>>) => void;
 }
-
-const SUIT_SYMBOLS: Record<Suit, string> = {
-  [Suit.Spades]: '♠',
-  [Suit.Hearts]: '♥',
-  [Suit.Clubs]: '♣',
-  [Suit.Diamonds]: '♦',
-};
-
-const SUIT_COLORS: Record<Suit, string> = {
-  [Suit.Spades]: '#94a3b8',
-  [Suit.Hearts]: '#f87171',
-  [Suit.Clubs]: '#4ade80',
-  [Suit.Diamonds]: '#fb923c',
-};
 
 export function DeckBuilder({
   deck, onSetDeck, onResetToStandard, onAddCard, onRemoveCard,
+  onApplyPreset, onUpdateCard, onBatchUpdate,
 }: DeckBuilderProps) {
   const { t } = useI18n();
-  const [fullMode, setFullMode] = useState(false);
+  const [mode, setMode] = useState<DeckMode>('quick');
   const [showAddForm, setShowAddForm] = useState(false);
   const [showRemoveForm, setShowRemoveForm] = useState(false);
 
@@ -51,7 +45,6 @@ export function DeckBuilder({
   };
 
   const handleStandardPreset = () => {
-    if (!fullMode) setFullMode(true);
     onResetToStandard();
   };
 
@@ -73,17 +66,22 @@ export function DeckBuilder({
         <h3>{t.deck.title}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span className="deck-builder__total">{deck.totalCards}</span>
-          <button
-            className="deck-builder__mode-toggle"
-            onClick={() => setFullMode(!fullMode)}
-          >
-            {fullMode ? t.deck.quickMode : t.deck.fullMode}
-          </button>
+          <div className="deck-builder__mode-tabs">
+            {(['quick', 'list', 'visual'] as const).map(m => (
+              <button
+                key={m}
+                className={`deck-builder__mode-tab${mode === m ? ' deck-builder__mode-tab--active' : ''}`}
+                onClick={() => setMode(m)}
+              >
+                {m === 'quick' ? t.deck.quickMode : m === 'list' ? t.deck.fullMode : t.deck.visualMode}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Quick Mode */}
-      {!fullMode && (
+      {mode === 'quick' && (
         <div className="deck-builder__quick">
           <input
             type="number"
@@ -100,8 +98,8 @@ export function DeckBuilder({
         </div>
       )}
 
-      {/* Full Mode */}
-      {fullMode && (
+      {/* List Mode */}
+      {mode === 'list' && (
         <>
           {/* Action Bar */}
           <div className="deck-builder__actions">
@@ -254,7 +252,7 @@ export function DeckBuilder({
                     .filter(([key]) => key !== CardEdition.None)
                     .map(([key, count]) => (
                       <span key={key} className="deck-builder__special-chip">
-                        {t.editionsLong[key] ?? key}: {count}
+                        {t.editionsLong[key as CardEdition] ?? key}: {count}
                       </span>
                     ))}
                 </div>
@@ -280,6 +278,18 @@ export function DeckBuilder({
             </div>
           )}
         </>
+      )}
+
+      {/* Visual Mode */}
+      {mode === 'visual' && onApplyPreset && onUpdateCard && onBatchUpdate && (
+        <DeckBuilderVisual
+          deck={deck}
+          onApplyPreset={onApplyPreset}
+          onUpdateCard={onUpdateCard}
+          onBatchUpdate={onBatchUpdate}
+          onAddCard={onAddCard}
+          onRemoveCard={onRemoveCard}
+        />
       )}
     </div>
   );

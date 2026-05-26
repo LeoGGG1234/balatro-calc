@@ -13,6 +13,7 @@ const ALL_HANDS = [
   HandType.FullHouse,
   HandType.FourOfAKind,
   HandType.StraightFlush,
+  HandType.RoyalFlush,
   HandType.FiveOfAKind,
   HandType.FlushHouse,
   HandType.FlushFive,

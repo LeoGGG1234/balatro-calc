@@ -18,9 +18,10 @@ export function RunSimPanel({ status, result, error, onRun, onReset }: RunSimPan
   const [maxAntes, setMaxAntes] = useState(3);
   const [enableShop, setEnableShop] = useState(false);
   const [randomBosses, setRandomBosses] = useState(false);
+  const [seed, setSeed] = useState('');
 
   const handleRun = () => {
-    onRun({ maxAntes, enableShop, randomBosses });
+    onRun({ maxAntes, enableShop, randomBosses, seed: seed || undefined });
   };
 
   return (
@@ -60,6 +61,18 @@ export function RunSimPanel({ status, result, error, onRun, onReset }: RunSimPan
               disabled={status === 'running'}
             />
             {' '}{t.runSim.config.randomBosses}
+          </label>
+          <label className="run-sim__config-label">
+            {t.runSim.config.seed}
+            <input
+              type="text"
+              className="input"
+              value={seed}
+              onChange={e => setSeed(e.target.value)}
+              disabled={status === 'running'}
+              placeholder="e.g. ALEPH1337"
+              style={{ width: 140 }}
+            />
           </label>
         </div>
         <div className="run-sim__config-actions">
@@ -104,7 +117,7 @@ export function RunSimPanel({ status, result, error, onRun, onReset }: RunSimPan
 
           <div className="run-sim__round-list">
             {result.rounds.map((round, i) => (
-              <RunRoundCard key={i} round={round} index={i} />
+              <RunRoundCard key={i} round={round} />
             ))}
             {result.rounds.length === 0 && (
               <div className="idle-state">No rounds were simulated.</div>

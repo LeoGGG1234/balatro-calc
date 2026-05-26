@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useI18n } from '../../i18n/context';
 import type { GameState, HandType } from '../../engine/types';
 import { generateShop, BoosterType, TAROT_CARDS, PLANET_CARDS } from '../../engine/shop';
-import type { GeneratedShop, BoosterSlot } from '../../engine/shop';
+import type { GeneratedShop, BoosterSlot, ShopItem } from '../../engine/shop';
+import type { Translations } from '../../i18n/types';
 
 interface ShopPanelProps {
   gameState: GameState;
@@ -39,11 +40,11 @@ export function ShopPanel({ gameState, dollars, onBuyJoker, onUpgradeHand, onBuy
     }
   }, [dollars, rerollCount, onDollarChange, generate]);
 
-  // Auto-generate on first render or when gameState changes
-  useMemo(() => {
+  // Auto-generate on mount and when gameState/dollars change
+  useEffect(() => {
     setShop(generateShop(gameState, dollars));
     setRerollCount(0);
-  }, []);
+  }, [gameState, dollars]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -113,9 +114,9 @@ function ShopSlotCard({
   slot, lang, t, dollars, utility,
   onBuyJoker, onUpgradeHand, onBuyVoucher, onDollarChange,
 }: {
-  slot: { label: string; item: any; itemType: string; pack?: BoosterSlot };
+  slot: { label: string; item: ShopItem | null; itemType: string; pack?: BoosterSlot };
   lang: string;
-  t: any;
+  t: Translations;
   dollars: number;
   utility: number;
   onBuyJoker: (id: string) => void;
@@ -125,7 +126,10 @@ function ShopSlotCard({
 }) {
   const [showPreview, setShowPreview] = useState(false);
 
-  const name = (item: any) => lang === 'zh-CN' ? (item.nameZh ?? item.name) : item.name;
+  const name = (item: ShopItem | null) => {
+    if (!item) return '';
+    return lang === 'zh-CN' ? (item.nameZh ?? item.name) : item.name;
+  };
   const packName = slot.pack
     ? (lang === 'zh-CN' ? BOOSTER_TYPE_NAMES[slot.pack.type].zh : BOOSTER_TYPE_NAMES[slot.pack.type].en)
     : '';
@@ -145,11 +149,11 @@ function ShopSlotCard({
     onDollarChange(dollars - price);
 
     if (slot.itemType === 'joker' && slot.item) {
-      onBuyJoker(slot.item.jokerId);
+      onBuyJoker((slot.item as import('../../engine/shop').JokerShopItem).jokerId);
     } else if (slot.itemType === 'planet' && slot.item) {
-      onUpgradeHand(slot.item.handType);
+      onUpgradeHand((slot.item as import('../../engine/shop').PlanetItem).handType);
     } else if (slot.itemType === 'voucher' && slot.item) {
-      onBuyVoucher(slot.item.id);
+      onBuyVoucher((slot.item as import('../../engine/shop').VoucherItem).id);
     }
   };
 

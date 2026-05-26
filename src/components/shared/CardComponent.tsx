@@ -2,20 +2,7 @@ import type { Card } from '../../engine/types';
 import {
   CardEnhancement, Seal, Suit, rankToChips,
 } from '../../engine/types';
-
-const SUIT_SYMBOLS: Record<Suit, string> = {
-  [Suit.Spades]: '♠',
-  [Suit.Hearts]: '♥',
-  [Suit.Clubs]: '♣',
-  [Suit.Diamonds]: '♦',
-};
-
-const SUIT_COLORS: Record<Suit, string> = {
-  [Suit.Spades]: '#4a5568',
-  [Suit.Hearts]: '#e53e3e',
-  [Suit.Clubs]: '#38a169',
-  [Suit.Diamonds]: '#dd6b20',
-};
+import { SUIT_SYMBOLS, SUIT_COLORS } from './card-display';
 
 const ENHANCEMENT_COLORS: Partial<Record<CardEnhancement, string>> = {
   [CardEnhancement.Bonus]: '#f6e05e',
