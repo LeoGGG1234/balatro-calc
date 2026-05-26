@@ -639,7 +639,7 @@ export function simulateRun(
         // Try discarding if available
         if (discardsUsed < bctx.maxDiscards) {
           const tip = quickDiscardTip(
-            { ...playState, roundState: { ...roundState, handsPlayed, discardsUsed } },
+            { ...playState, handCards: currentHandCards, deckComposition: currentDeck, roundState: { ...roundState, handsPlayed, discardsUsed } },
           );
           if (tip && tip.discardIndices.length > 0) {
             totalCardsDiscardedThisBlind += tip.discardIndices.length;

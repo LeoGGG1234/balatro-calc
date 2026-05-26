@@ -53,6 +53,32 @@ export function scorePlay(
     finalScore: 0,
   };
 
+  // ── Boss blind enforcement ──────────────────────────────────
+  if (state.blind.mustPlayFiveCards && playedCards.length !== 5) {
+    breakdown.totalChips = 0;
+    breakdown.totalMult = 0;
+    breakdown.finalScore = 0;
+    return breakdown;
+  }
+  if (state.blind.forbiddenHandTypes?.includes(handType)) {
+    breakdown.totalChips = 0;
+    breakdown.totalMult = 0;
+    breakdown.finalScore = 0;
+    return breakdown;
+  }
+  if (state.blind.forcedHandType && handType !== state.blind.forcedHandType) {
+    breakdown.totalChips = 0;
+    breakdown.totalMult = 0;
+    breakdown.finalScore = 0;
+    return breakdown;
+  }
+  if (state.blind.forcedCardId && !playedCards.some(c => c.id === state.blind.forcedCardId)) {
+    breakdown.totalChips = 0;
+    breakdown.totalMult = 0;
+    breakdown.finalScore = 0;
+    return breakdown;
+  }
+
   const acc: ScoreAccumulator = {
     chips: breakdown.baseHand.chips,
     mult: breakdown.baseHand.mult,
@@ -290,12 +316,17 @@ function resolveBlueprintCopy(
 
   const target = jokers[targetIdx];
   const def = getDef(target.id);
-  if (!def || !def.copyable) return null;
+  if (!def) return null;
 
+  // Chain through another Blueprint/Brainstorm (resolve recursively)
   if (target.id === 'blueprint') {
     return resolveBlueprintCopy(jokers, targetIdx, getDef);
   }
+  if (target.id === 'brainstorm') {
+    return resolveBrainstormCopy(jokers, getDef);
+  }
 
+  if (!def.copyable) return null;
   return target;
 }
 

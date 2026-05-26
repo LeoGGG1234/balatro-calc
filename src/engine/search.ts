@@ -202,6 +202,7 @@ export function findOptimalPlay(
 // ─── Search Result Formatting ──────────────────────────────────
 
 export function formatScore(score: number): string {
+  if (!Number.isFinite(score)) return score.toString();
   if (score < 1000) return score.toString();
   if (score < 1_000_000) return (score / 1000).toFixed(1) + 'K';
   if (score < 1_000_000_000) return (score / 1_000_000).toFixed(1) + 'M';
