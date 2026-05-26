@@ -4,10 +4,10 @@ import type {
   JokerInstance, JokerModifiers,
 } from './types';
 import {
-  isFaceCard, isNumberCard, isStone,
+  isFaceCard, isNumberCard, isStone, CardEdition, Seal,
 } from './types';
 import { getHandBaseChips, getHandBaseMult } from './constants';
-import { applyEnhancementHeld, scoreCardTrigger } from './card-effects';
+import { applyEnhancementHeld, scoreCardTrigger, applyJokerEdition } from './card-effects';
 import { getJoker } from './joker-effects';
 import { type JokerStateOverrides } from './joker-data';
 
@@ -57,12 +57,29 @@ export function scorePlay(
   const orderedJokers = jokerOrder.map(i => state.jokers[i]);
   const allFace = jokerModifiers?.allCardsFace ?? false;
 
+  // Pre-resolve joker definitions for the scoring hot path
+  const jokerDefs = new Map(state.jokers.map(j => [j.id, getJoker(j.id)] as const));
+  const getDef = (id: string) => jokerDefs.get(id);
+
   // ─── Phase 1: Played Card Scoring ────────────────────────────
   for (const card of playedCards) {
-    if (isStone(card)) continue; // stone cards don't score individually
+    if (isStone(card)) {
+      // Stone cards give flat 50 chips per trigger but don't trigger on-scored joker effects
+      const stoneRetriggers = countCardRetriggers(card, state, candidate, orderedJokers, allFace, getDef);
+      for (let t = 0; t < 1 + stoneRetriggers; t++) {
+        acc.chips += 50;
+        breakdown.cardScores.push({
+          cardId: card.id,
+          triggerIndex: t,
+          chipsContribution: 50,
+          multContribution: 0,
+        });
+      }
+      continue;
+    }
     if (card.debuffed) continue; // debuffed by boss blind
 
-    const retriggers = countCardRetriggers(card, state, candidate, orderedJokers, allFace);
+    const retriggers = countCardRetriggers(card, state, candidate, orderedJokers, allFace, getDef);
 
     for (let t = 0; t < 1 + retriggers; t++) {
       const beforeChips = acc.chips;
@@ -82,7 +99,7 @@ export function scorePlay(
       };
 
       for (const jokerInst of orderedJokers) {
-        const def = getJoker(jokerInst.id);
+        const def = getDef(jokerInst.id);
         if (def?.effect.onCardScored) {
           def.effect.onCardScored(cardCtx, acc);
         }
@@ -100,7 +117,7 @@ export function scorePlay(
   // ─── Phase 2: Held-in-Hand Card Enhancement Effects ──────────
   // Steel cards apply x1.5 mult, Gold cards give $3, etc.
   // Mime re-triggers all held card enhancements
-  const hasMime = orderedJokers.some(j => getJoker(j.id)?.effect.handlesHeldRetriggers);
+  const hasMime = orderedJokers.some(j => getDef(j.id)?.effect.handlesHeldRetriggers);
   const heldPasses = hasMime ? 2 : 1;
 
   const multBeforeHeld = acc.mult;
@@ -124,7 +141,7 @@ export function scorePlay(
 
   for (let pass = 0; pass < heldPasses; pass++) {
     for (const jokerInst of orderedJokers) {
-      const def = getJoker(jokerInst.id);
+      const def = getDef(jokerInst.id);
       if (!def) continue;
 
       // Baron and Shoot the Moon trigger on held cards
@@ -162,14 +179,14 @@ export function scorePlay(
 
     // Resolve Blueprint/Brainstorm
     if (jokerInst.id === 'blueprint') {
-      const target = resolveBlueprintCopy(orderedJokers, jIdx);
+      const target = resolveBlueprintCopy(orderedJokers, jIdx, getDef);
       if (target) effectiveJoker = target;
     } else if (jokerInst.id === 'brainstorm') {
-      const target = resolveBrainstormCopy(orderedJokers);
+      const target = resolveBrainstormCopy(orderedJokers, getDef);
       if (target) effectiveJoker = target;
     }
 
-    const def = getJoker(effectiveJoker.id);
+    const def = getDef(effectiveJoker.id);
     if (!def) continue;
 
     const beforeEval = { chips: acc.chips, mult: acc.mult };
@@ -194,14 +211,12 @@ export function scorePlay(
 
     // Joker edition (foil/holo/poly) — applies on top of the joker's effect
     // Note: For Blueprint/Brainstorm, the edition on the COPYING joker applies
-    if (jokerInst.edition && jokerInst.edition !== 'none') {
-      applyJokerEditionEffect(jokerInst, acc);
+    if (jokerInst.edition && jokerInst.edition !== CardEdition.None) {
+      applyJokerEdition(jokerInst.edition, acc, jokerInst.id);
     }
 
-    // Track contribution
-    const entry = breakdown.jokerScores.find(
-      js => js.jokerIndex === jIdx
-    );
+    // Track contribution (jokerScores is parallel to orderedJokers)
+    const entry = breakdown.jokerScores[jIdx];
     if (entry) {
       entry.chipsAdded = acc.chips - beforeEval.chips;
       entry.plusMult = acc.mult - beforeEval.mult;
@@ -211,9 +226,6 @@ export function scorePlay(
       }
     }
   }
-
-  // Also apply editions for any jokers that have them but whose effect was already handled
-  // (For non-Blueprint/Brainstorm jokers, edition is already handled above)
 
   // ─── Phase 5: Final Score ────────────────────────────────────
   breakdown.totalChips = acc.chips;
@@ -230,24 +242,22 @@ function countCardRetriggers(
   state: GameState,
   candidate: PlayCandidate,
   orderedJokers: JokerInstance[],
-  allCardsFace: boolean = false
+  allCardsFace: boolean = false,
+  getDef: (id: string) => ReturnType<typeof getJoker>,
 ): number {
   let retriggers = 0;
 
   // Red seal
-  if (card.seal === 'red') retriggers += 1;
+  if (card.seal === Seal.Red) retriggers += 1;
 
   // Retrigger jokers
   for (const jokerInst of orderedJokers) {
-    const def = getJoker(jokerInst.id);
+    const def = getDef(jokerInst.id);
     if (!def) continue;
 
     if (def.effect.getRetriggers) {
       retriggers += def.effect.getRetriggers(card, candidate.handType, allCardsFace);
     }
-
-    // Sock and Buskin: handled by getRetriggers
-    // Hack: handled by getRetriggers
 
     // Hanging Chad: retriggers first card 2 extra times
     if (jokerInst.id === 'hanging_chad' && card === candidate.playedCards[0]) {
@@ -265,39 +275,38 @@ function countCardRetriggers(
 
 // ─── Blueprint / Brainstorm Resolution ─────────────────────────
 
-function resolveBlueprintCopy(jokers: JokerInstance[], currentIndex: number): JokerInstance | null {
-  // Copy the joker immediately to the right
+function resolveBlueprintCopy(
+  jokers: JokerInstance[],
+  currentIndex: number,
+  getDef: (id: string) => ReturnType<typeof getJoker>,
+): JokerInstance | null {
   const targetIdx = currentIndex + 1;
   if (targetIdx >= jokers.length) return null;
 
   const target = jokers[targetIdx];
-  const def = getJoker(target.id);
+  const def = getDef(target.id);
   if (!def || !def.copyable) return null;
 
-  // If target is itself Blueprint, resolve recursively
   if (target.id === 'blueprint') {
-    return resolveBlueprintCopy(jokers, targetIdx);
+    return resolveBlueprintCopy(jokers, targetIdx, getDef);
   }
 
   return target;
 }
 
-function resolveBrainstormCopy(jokers: JokerInstance[]): JokerInstance | null {
-  // Copy the leftmost joker
+function resolveBrainstormCopy(
+  jokers: JokerInstance[],
+  getDef: (id: string) => ReturnType<typeof getJoker>,
+): JokerInstance | null {
   const leftmost = jokers[0];
   if (!leftmost) return null;
 
-  // Brainstorm can't copy itself
   if (leftmost.id === 'brainstorm') {
-    // Find the first non-brainstorm joker to copy
     const firstReal = jokers.find(j => j.id !== 'brainstorm');
-    // Actually, Brainstorm copies the LEFTMOST joker. If the leftmost is
-    // Brainstorm itself, it won't find anything useful unless there's another.
-    // In the game, Brainstorm cannot copy itself.
     return firstReal || null;
   }
 
-  const def = getJoker(leftmost.id);
+  const def = getDef(leftmost.id);
   if (!def || !def.copyable) return null;
 
   return leftmost;
@@ -305,143 +314,77 @@ function resolveBrainstormCopy(jokers: JokerInstance[]): JokerInstance | null {
 
 // ─── State Override Application ────────────────────────────────
 
+type OverrideOp = 'addMult' | 'mulMult' | 'addChips';
+
+const OVERRIDE_OPS: Record<string, OverrideOp | null> = {
+  ride_the_bus: 'addMult',
+  supernova: 'addMult',
+  fortune_teller: 'addMult',
+  green_joker: 'addMult',
+  popcorn: 'addMult',
+  ceremonial_dagger: 'addMult',
+  faceless: 'addMult',
+  red_card: 'addMult',
+  swashbuckler: 'addMult',
+  flash: 'addMult',
+  trousers: 'addMult',
+  hologram: 'mulMult',
+  constellation: 'mulMult',
+  campfire: 'mulMult',
+  canio: 'mulMult',
+  yorick: 'mulMult',
+  joker_stencil: 'mulMult',
+  lucky_cat: 'mulMult',
+  glass: 'mulMult',
+  throwback: 'mulMult',
+  hit_the_road: 'mulMult',
+  obelisk: 'mulMult',
+  ancient: 'mulMult',
+  loyalty_card: 'mulMult',
+  madness: 'mulMult',
+  idol: 'mulMult',
+  ice_cream: 'addChips',
+  square: 'addChips',
+  runner: 'addChips',
+  castle: 'addChips',
+  wee: 'addChips',
+};
+
 function applyStateOverride(
-  def: { id: string; category: string },
+  def: { id: string },
   _jokerInst: JokerInstance,
   override: number,
   _ctx: JokerEvaluateContext,
   acc: ScoreAccumulator
 ): void {
-  switch (def.id) {
-    case 'ride_the_bus':
-      acc.mult += override;
-      break;
-    case 'supernova':
-      // override = number of times this hand type played this run
-      acc.mult += override;
-      break;
-    case 'fortune_teller':
-      acc.mult += override;
-      break;
-    case 'green_joker':
-      acc.mult += override;
-      break;
-    case 'popcorn':
-      acc.mult += override;
-      break;
-    case 'ceremonial_dagger':
-      acc.mult += override;
-      break;
-    case 'faceless':
-      acc.mult += override;
-      break;
-    case 'hologram':
-      acc.mult *= override;
-      break;
-    case 'constellation':
-      acc.mult *= override;
-      break;
-    case 'campfire':
-      acc.mult *= override;
-      break;
-    case 'canio':
-      acc.mult *= override;
-      break;
-    case 'yorick':
-      acc.mult *= override;
-      break;
-    case 'steel_joker':
-      acc.mult *= (1 + override * 0.2);
-      break;
-    case 'drivers_license':
-      if (override >= 16) acc.mult *= 3;
-      break;
-    case 'joker_stencil':
-      acc.mult *= override; // override = number of empty slots
-      break;
-    case 'ice_cream':
-      acc.chips += override;
-      break;
-    case 'square':
-      acc.chips += override;
-      break;
-    case 'runner':
-      acc.chips += override;
-      break;
-    case 'red_card':
-      acc.mult += override;
-      break;
-    case 'swashbuckler':
-      acc.mult += override;
-      break;
-    case 'stone':
-      acc.chips += 25 * override;
-      break;
-    case 'hiker':
-      acc.chips += 5 * override;
-      break;
-    case 'flash':
-      acc.mult += override;
-      break;
-    case 'trousers':
-      acc.mult += override;
-      break;
-    case 'castle':
-      acc.chips += override;
-      break;
-    case 'lucky_cat':
-      acc.mult *= override;
-      break;
-    case 'glass':
-      acc.mult *= override;
-      break;
-    case 'wee':
-      acc.chips += override;
-      break;
-    case 'throwback':
-      acc.mult *= override;
-      break;
-    case 'hit_the_road':
-      acc.mult *= override;
-      break;
-    case 'obelisk':
-      acc.mult *= override;
-      break;
-    case 'ancient':
-      acc.mult *= override;
-      break;
-    case 'loyalty_card':
-      acc.mult *= override;
-      break;
-    case 'madness':
-      acc.mult *= override;
-      break;
-    case 'idol':
-      acc.mult *= override;
-      break;
+  const op = OVERRIDE_OPS[def.id];
+  switch (op) {
+    case 'addMult': acc.mult += override; break;
+    case 'mulMult': acc.mult *= override; break;
+    case 'addChips': acc.chips += override; break;
   }
-}
 
-function applyJokerEditionEffect(jokerInst: JokerInstance, acc: ScoreAccumulator): void {
-  switch (jokerInst.edition) {
-    case 'foil':
-      acc.chips += 50;
-      break;
-    case 'holo':
-      acc.mult += 10;
-      break;
-    case 'poly':
-      acc.mult *= 1.5;
-      break;
+  // Jokers with formula-based overrides
+  if (def.id === 'steel_joker') {
+    acc.mult *= (1 + override * 0.2);
+  } else if (def.id === 'drivers_license' && override >= 16) {
+    acc.mult *= 3;
+  } else if (def.id === 'stone') {
+    acc.chips += 25 * override;
+  } else if (def.id === 'hiker') {
+    acc.chips += 5 * override;
   }
 }
 
 // ─── Baseball Card Handling ────────────────────────────────────
 
-export function computeBaseballCardMult(orderedJokers: JokerInstance[]): number {
+export function computeBaseballCardMult(
+  orderedJokers: JokerInstance[],
+  getDef: (id: string) => ReturnType<typeof getJoker> = getJoker,
+): number {
   let uncommons = 0;
   for (const j of orderedJokers) {
-    const def = getJoker(j.id);
+    const def = getDef(j.id);
     if (def && def.rarity === 'uncommon') uncommons++;
   }
   return Math.pow(1.5, uncommons);

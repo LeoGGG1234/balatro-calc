@@ -316,9 +316,6 @@ export function getJokerModifiers(jokers: JokerInstance[]): JokerModifiers {
   };
 }
 
-/** @deprecated Use getJokerModifiers instead */
-export const getHandEvalModifiers = getJokerModifiers;
-
 // ─── Joker Round Modifiers (hand size, discards, max hands) ──────
 
 export interface JokerRoundModifiers {

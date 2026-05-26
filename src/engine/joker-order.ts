@@ -76,16 +76,19 @@ export function generateOptimalJokerOrderings(jokers: JokerInstance[]): number[]
 
 /**
  * Build the canonical (optimal default) order:
- * chips → plus_mult → retrigger → xmult → other (left to right)
+ * chips → plus_mult → xmult → retrigger → other (left to right)
+ *
+ * Retriggers go last so that card re-triggers benefit from
+ * all chips/+mult/×mult accumulated up to that point.
  */
 function canonicalOrder(classified: ClassifiedJoker[]): number[] {
   const groups = groupByClass(classified);
   const order: number[] = [];
 
   // Category priority (left to right):
-  // retriggers and chips can go early; +mult before ×mult
+  // chips → +mult → ×mult → retrigger
   // Blueprint/Brainstorm at the end so we don't mess with their positioning
-  const priority: JokerClass[] = ['retrigger', 'chips', 'plus_mult', 'xmult', 'brainstorm', 'blueprint', 'other'];
+  const priority: JokerClass[] = ['chips', 'plus_mult', 'xmult', 'retrigger', 'brainstorm', 'blueprint', 'other'];
 
   for (const cls of priority) {
     const group = groups.get(cls);

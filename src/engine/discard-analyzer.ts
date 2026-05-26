@@ -1,11 +1,13 @@
 import type {
   Card, GameState, JokerModifiers, DeckComposition,
 } from './types';
-import { HandType, Rank, isStone, ALL_RANKS, ALL_SUITS } from './types';
+import { HandType, Rank, Suit, isStone, ALL_RANKS, ALL_SUITS, ALL_HAND_TYPES, rankToChips } from './types';
 import { recognizeHand } from './hand-evaluator';
 import { getJokerModifiers } from './joker-data';
 import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
+import { getHandBaseChips, getHandBaseMult, HAND_DEFINITIONS } from './constants';
+import { combinations } from './combo-utils';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -83,14 +85,11 @@ export function analyzeDiscards(
   // Enumerate discard subsets
   const handSize = state.handCards.length;
   const maxDiscard = Math.min(cfg.maxDiscardSize, handSize - cfg.minKeptCards);
-  const handIndices = state.handCards.map((_, i) => i);
 
   const options: DiscardOption[] = [];
 
   for (let size = 1; size <= maxDiscard; size++) {
-    const subsets = generateDiscardSubsets(handIndices, size);
-
-    for (const discardIndices of subsets) {
+    for (const discardIndices of combinations(handSize, size)) {
       if (options.length >= cfg.maxOptions) break;
 
       const discardCards = discardIndices.map(i => state.handCards[i]);
@@ -158,29 +157,6 @@ export function analyzeDiscards(
   };
 }
 
-// ─── Subset Enumeration ─────────────────────────────────────────
-
-function generateDiscardSubsets(handIndices: number[], size: number): number[][] {
-  const result: number[][] = [];
-  const n = handIndices.length;
-
-  const indices = Array.from({ length: size }, (_, i) => i);
-  while (true) {
-    result.push(indices.map(i => handIndices[i]));
-
-    let i = size - 1;
-    while (i >= 0 && indices[i] === n - size + i) i--;
-    if (i < 0) break;
-
-    indices[i]++;
-    for (let j = i + 1; j < size; j++) {
-      indices[j] = indices[j - 1] + 1;
-    }
-  }
-
-  return result;
-}
-
 // ─── Score Estimation After Draw ─────────────────────────────────
 
 function estimateScoreAfterDraw(
@@ -208,8 +184,7 @@ function estimateScoreAfterDraw(
   );
 
   // Rough estimate: kept score + draw contribution
-  estimatedScore = Math.max(keptScore, keptScore + avgChips * discardCount);
-  estimatedScore = Math.max(estimatedScore, handBoost);
+  estimatedScore = Math.max(keptScore + avgChips * discardCount, handBoost);
 
   return estimatedScore;
 }
@@ -222,19 +197,11 @@ function estimateAverageDrawChips(deck: DeckComposition): number {
   for (const rank of ALL_RANKS) {
     const count = remainingByRank[rank] ?? 0;
     totalCards += count;
-    totalChips += rankToChipsSimple(rank) * count;
+    totalChips += rankToChips(rank) * count;
   }
 
   if (totalCards === 0) return 0;
   return totalChips / totalCards;
-}
-
-function rankToChipsSimple(rank: Rank): number {
-  switch (rank) {
-    case Rank.Ace: return 11;
-    case Rank.King: case Rank.Queen: case Rank.Jack: return 10;
-    default: return parseInt(rank);
-  }
 }
 
 function estimateHandCompletionBoost(
@@ -247,27 +214,19 @@ function estimateHandCompletionBoost(
   // Given kept cards, what better hands could be completed with favorable draws?
   // Check higher-tier hands and estimate probability of completing them
 
-  const handHierarchy: HandType[] = [
-    HandType.HighCard, HandType.Pair, HandType.TwoPair,
-    HandType.ThreeOfAKind, HandType.Straight, HandType.Flush,
-    HandType.FullHouse, HandType.FourOfAKind, HandType.StraightFlush,
-    HandType.RoyalFlush, HandType.FiveOfAKind, HandType.FlushHouse,
-    HandType.FlushFive,
-  ];
-
-  const currentTier = handHierarchy.indexOf(currentBestHand);
+  const currentTier = ALL_HAND_TYPES.indexOf(currentBestHand);
   let bestEstimatedScore = 0;
 
   // Check higher-tier hands
-  for (let tier = currentTier + 1; tier < handHierarchy.length; tier++) {
-    const targetHand = handHierarchy[tier];
+  for (let tier = currentTier + 1; tier < ALL_HAND_TYPES.length; tier++) {
+    const targetHand = ALL_HAND_TYPES[tier];
     const cardsNeeded = cardsNeededForHand(keptCards, targetHand, jokerModifiers);
 
     if (cardsNeeded <= discardCount && cardsNeeded > 0) {
       // This hand is achievable with favorable draws
       // Estimate score: use full hand scoring (simplified)
-      const handChips = getHandChipsEstimate(targetHand, 1); // assume level 1
-      const handMult = getHandMultEstimate(targetHand, 1);
+      const handChips = getHandBaseChips(targetHand, state.handLevels[targetHand] ?? 1);
+      const handMult = getHandBaseMult(targetHand, state.handLevels[targetHand] ?? 1);
       const cardChips = estimateCardChipsFromKept(keptCards) + estimateAverageDrawChips(state.deckComposition) * cardsNeeded;
       const estimatedScore = (handChips + cardChips) * handMult;
       bestEstimatedScore = Math.max(bestEstimatedScore, estimatedScore);
@@ -277,49 +236,8 @@ function estimateHandCompletionBoost(
   return bestEstimatedScore;
 }
 
-function getHandChipsEstimate(handType: HandType, level: number): number {
-  // Mirror of getHandBaseChips
-  const defs: Record<string, { chips: number; chipsPerLevel: number }> = {
-    high_card: { chips: 5, chipsPerLevel: 10 },
-    pair: { chips: 10, chipsPerLevel: 15 },
-    two_pair: { chips: 20, chipsPerLevel: 20 },
-    three_of_a_kind: { chips: 30, chipsPerLevel: 20 },
-    straight: { chips: 55, chipsPerLevel: 30 },
-    flush: { chips: 35, chipsPerLevel: 15 },
-    full_house: { chips: 40, chipsPerLevel: 25 },
-    four_of_a_kind: { chips: 60, chipsPerLevel: 30 },
-    straight_flush: { chips: 100, chipsPerLevel: 40 },
-    royal_flush: { chips: 100, chipsPerLevel: 40 },
-    five_of_a_kind: { chips: 120, chipsPerLevel: 35 },
-    flush_house: { chips: 140, chipsPerLevel: 40 },
-    flush_five: { chips: 160, chipsPerLevel: 50 },
-  };
-  const d = defs[handType] ?? { chips: 5, chipsPerLevel: 10 };
-  return d.chips + (level - 1) * d.chipsPerLevel;
-}
-
-function getHandMultEstimate(handType: HandType, level: number): number {
-  const defs: Record<string, { mult: number; multPerLevel: number }> = {
-    high_card: { mult: 1, multPerLevel: 1 },
-    pair: { mult: 2, multPerLevel: 1 },
-    two_pair: { mult: 2, multPerLevel: 1 },
-    three_of_a_kind: { mult: 3, multPerLevel: 2 },
-    straight: { mult: 4, multPerLevel: 3 },
-    flush: { mult: 4, multPerLevel: 2 },
-    full_house: { mult: 4, multPerLevel: 2 },
-    four_of_a_kind: { mult: 7, multPerLevel: 3 },
-    straight_flush: { mult: 8, multPerLevel: 4 },
-    royal_flush: { mult: 8, multPerLevel: 4 },
-    five_of_a_kind: { mult: 12, multPerLevel: 3 },
-    flush_house: { mult: 14, multPerLevel: 4 },
-    flush_five: { mult: 16, multPerLevel: 3 },
-  };
-  const d = defs[handType] ?? { mult: 1, multPerLevel: 1 };
-  return d.mult + (level - 1) * d.multPerLevel;
-}
-
 function estimateCardChipsFromKept(cards: Card[]): number {
-  return cards.reduce((sum, c) => sum + (isStone(c) ? 50 : rankToChipsSimple(c.rank)), 0);
+  return cards.reduce((sum, c) => sum + (isStone(c) ? 50 : rankToChips(c.rank)), 0);
 }
 
 function cardsNeededForHand(
@@ -337,7 +255,7 @@ function cardsNeededForHand(
     const handType = recognizeHand(keptCards, jokerModifiers);
     if (handType === targetHand) return 0;
     // Higher-tier hand check
-    if (handTypeIndex(handType) >= handTypeIndex(targetHand)) return 0;
+    if (ALL_HAND_TYPES.indexOf(handType) >= ALL_HAND_TYPES.indexOf(targetHand)) return 0;
   }
 
   // Estimate how many more cards needed
@@ -379,19 +297,8 @@ function cardsNeededForHand(
   }
 }
 
-function handTypeIndex(handType: HandType): number {
-  const order: HandType[] = [
-    HandType.HighCard, HandType.Pair, HandType.TwoPair,
-    HandType.ThreeOfAKind, HandType.Straight, HandType.Flush,
-    HandType.FullHouse, HandType.FourOfAKind, HandType.StraightFlush,
-    HandType.RoyalFlush, HandType.FiveOfAKind, HandType.FlushHouse,
-    HandType.FlushFive,
-  ];
-  return order.indexOf(handType);
-}
-
-function countRanksSimple(cards: Card[]): Record<string, number> {
-  const counts: Record<string, number> = {};
+function countRanksSimple(cards: Card[]): Partial<Record<Rank, number>> {
+  const counts: Partial<Record<Rank, number>> = {};
   for (const c of cards) {
     if (isStone(c)) continue;
     counts[c.rank] = (counts[c.rank] ?? 0) + 1;
@@ -399,8 +306,8 @@ function countRanksSimple(cards: Card[]): Record<string, number> {
   return counts;
 }
 
-function countSuitsSimple(cards: Card[]): Record<string, number> {
-  const counts: Record<string, number> = {};
+function countSuitsSimple(cards: Card[]): Partial<Record<Suit, number>> {
+  const counts: Partial<Record<Suit, number>> = {};
   for (const c of cards) {
     if (isStone(c)) continue;
     counts[c.suit] = (counts[c.suit] ?? 0) + 1;
@@ -446,7 +353,7 @@ function identifyTargetHands(
 
   // Check pair/three/four of a kind
   if (maxRank >= 2) targets.push(HandType.Pair);
-  if (maxRank >= 2) targets.push(HandType.ThreeOfAKind);
+  if (maxRank >= 3) targets.push(HandType.ThreeOfAKind);
   if (maxRank >= 3) targets.push(HandType.FourOfAKind);
 
   // Full house
@@ -474,21 +381,13 @@ function buildRationale(
     return `Discarding ${discardCards.length} card(s) doesn't improve your hand. Keep current setup.`;
   }
 
-  const handNames: Record<string, string> = {
-    high_card: 'High Card', pair: 'Pair', two_pair: 'Two Pair',
-    three_of_a_kind: 'Three of a Kind', straight: 'Straight', flush: 'Flush',
-    full_house: 'Full House', four_of_a_kind: 'Four of a Kind',
-    straight_flush: 'Straight Flush', royal_flush: 'Royal Flush',
-    five_of_a_kind: 'Five of a Kind', flush_house: 'Flush House', flush_five: 'Flush Five',
-  };
-
   if (targetHandTypes.length > 0 && targetHandTypes[0] !== currentBestHand) {
-    const targetName = handNames[targetHandTypes[0]] ?? targetHandTypes[0];
+    const targetName = HAND_DEFINITIONS[targetHandTypes[0]]?.name ?? targetHandTypes[0];
     return `Discard ${discardCards.length} card(s) to go for ${targetName}. Keeping ${keptCards.length} cards that contribute to this hand.`;
   }
 
   if (bestHandWithKept !== currentBestHand) {
-    const keptName = handNames[bestHandWithKept] ?? bestHandWithKept;
+    const keptName = HAND_DEFINITIONS[bestHandWithKept]?.name ?? bestHandWithKept;
     return `Discard ${discardCards.length} low-value cards. Best kept hand: ${keptName}.`;
   }
 
@@ -552,17 +451,10 @@ export function quickDiscardTip(
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i];
     if (isStone(c)) continue; // Keep stones
-    // Suggest discarding cards that don't contribute to pairs/flushes
-    if (c.enhancement === 'none' && c.seal === 'none' && c.edition === 'none') {
-      // Check if this card contributes to a pair
-      const sameRankCount = scoringCards.filter(sc => sc.rank === c.rank).length;
-      if (sameRankCount < 2) {
-        lowValueIndices.push(i);
-      }
-      // Also discard low chips if no flush potential
-      if (!hasFlushPotential(cards, mods)) {
-        // Keep only if not already marked
-      }
+    // Discard cards that don't contribute to pairs/flushes (including enhanced/sealed/editioned)
+    const sameRankCount = scoringCards.filter(sc => sc.rank === c.rank).length;
+    if (sameRankCount < 2) {
+      lowValueIndices.push(i);
     }
   }
 
@@ -570,7 +462,7 @@ export function quickDiscardTip(
 
   // Take the worst few cards (lowest chips value)
   const discardSorted = lowValueIndices
-    .sort((a, b) => rankToChipsSimple(cards[a].rank) - rankToChipsSimple(cards[b].rank))
+    .sort((a, b) => rankToChips(cards[a].rank) - rankToChips(cards[b].rank))
     .slice(0, Math.min(5, lowValueIndices.length));
 
   return {
@@ -580,10 +472,3 @@ export function quickDiscardTip(
   };
 }
 
-function hasFlushPotential(cards: Card[], mods: JokerModifiers): boolean {
-  const scoringCards = cards.filter(c => !isStone(c));
-  const suitCounts = countSuitsSimple(scoringCards);
-  const maxSuit = Math.max(...Object.values(suitCounts), 0);
-  const minCards = mods.fourFingers ? 4 : 5;
-  return maxSuit >= minCards - 2;
-}

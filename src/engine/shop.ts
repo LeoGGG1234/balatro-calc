@@ -1,7 +1,8 @@
 import type { GameState, DeckComposition } from './types';
-import { HandType, CardEdition } from './types';
+import { HandType, CardEdition, Rank, CardEnhancement } from './types';
 import { HAND_DEFINITIONS, getHandBaseChips, getHandBaseMult } from './constants';
 import { findOptimalPlay } from './search';
+import { getAllJokers } from './jokers/registry';
 
 // ─── Booster Pack Types ────────────────────────────────────────
 
@@ -93,7 +94,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_magician', name: 'The Magician', nameZh: '魔术师',
     effectDesc: '+5 Mult (enhances 1 selected card)', effectDescZh: '强化1张牌为+5倍率',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       return unenhanced > 10 ? 0.12 : 0.05;
     },
   },
@@ -101,7 +102,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_high_priestess', name: 'The High Priestess', nameZh: '女祭司',
     effectDesc: '+30 Chips (enhances 1 selected card)', effectDescZh: '强化1张牌为+30筹码',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       return unenhanced > 10 ? 0.12 : 0.05;
     },
   },
@@ -109,7 +110,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_empress', name: 'The Empress', nameZh: '女皇',
     effectDesc: '+4 Mult (enhances 1 selected card)', effectDescZh: '强化1张牌为+4倍率',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       return unenhanced > 10 ? 0.15 : 0.06;
     },
   },
@@ -136,7 +137,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_chariot', name: 'The Chariot', nameZh: '战车',
     effectDesc: 'Enhances 1 card to Steel', effectDescZh: '强化1张牌为钢铁',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       const hasMime = s.jokers.some(j => j.id === 'mime');
       let util = 0.12 + (unenhanced > 15 ? 0.08 : unenhanced > 5 ? 0.04 : 0);
       if (hasMime) util += 0.1;
@@ -147,7 +148,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'justice', name: 'Justice', nameZh: '正义',
     effectDesc: 'Enhances 1 card to Glass', effectDescZh: '强化1张牌为玻璃',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       return 0.12 + (unenhanced > 10 ? 0.10 : unenhanced > 3 ? 0.05 : 0);
     },
   },
@@ -185,7 +186,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_devil', name: 'The Devil', nameZh: '恶魔',
     effectDesc: 'Enhances 1 card to Gold', effectDescZh: '强化1张牌为黄金',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       return unenhanced > 8 ? 0.08 : 0.03;
     },
   },
@@ -193,7 +194,7 @@ const TAROT_CARDS: Omit<TarotItem, 'price'>[] = [
     type: 'tarot' as const, id: 'the_tower', name: 'The Tower', nameZh: '塔',
     effectDesc: 'Enhances 1 card to Stone', effectDescZh: '强化1张牌为石头',
     utilityFn: (s) => {
-      const unenhanced = s.deckComposition.enhancementCounts?.none ?? s.deckComposition.totalCards;
+      const unenhanced = s.deckComposition.enhancementCounts?.[CardEnhancement.None] ?? s.deckComposition.totalCards;
       const hasStoneJoker = s.jokers.some(j => j.id === 'stone_joker');
       let util = unenhanced > 8 ? 0.10 : 0.04;
       if (hasStoneJoker) util += 0.12;
@@ -346,8 +347,8 @@ function getJokerUtility(jokerId: string, state: GameState): number {
 
     // Deck synergy bonuses
     const deck = state.deckComposition;
-    const steelCount = deck.enhancementCounts?.steel ?? 0;
-    const faceCount = (deck.remainingByRank?.['K'] ?? 0) + (deck.remainingByRank?.['Q'] ?? 0) + (deck.remainingByRank?.['J'] ?? 0);
+    const steelCount = deck.enhancementCounts?.[CardEnhancement.Steel] ?? 0;
+    const faceCount = (deck.remainingByRank?.[Rank.King] ?? 0) + (deck.remainingByRank?.[Rank.Queen] ?? 0) + (deck.remainingByRank?.[Rank.Jack] ?? 0);
 
     if (jokerId === 'mime' && steelCount >= 3) utility += 0.15;
     if ((jokerId === 'bull' || jokerId === 'bootstrap') && state.roundState.dollars > 20) utility += 0.1;
@@ -379,8 +380,9 @@ const ALL_BOOSTER_TYPES = [
   BoosterType.Buffoon,
 ];
 
-function randomPick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function randomPick<T>(arr: T[], rng?: () => number): T {
+  const rand = rng ? rng() : Math.random();
+  return arr[Math.floor(rand * arr.length)];
 }
 
 export interface GeneratedShop {
@@ -394,35 +396,32 @@ export interface GeneratedShop {
   bestPurchase: string;
 }
 
-export function generateShop(gameState: GameState, dollars: number): GeneratedShop {
+export function generateShop(gameState: GameState, dollars: number, rng?: () => number): GeneratedShop {
   // Pick 2 random booster pack types
-  const packType1 = randomPick(ALL_BOOSTER_TYPES);
-  let packType2 = randomPick(ALL_BOOSTER_TYPES);
+  const packType1 = randomPick(ALL_BOOSTER_TYPES, rng);
+  let packType2 = randomPick(ALL_BOOSTER_TYPES, rng);
   while (packType2 === packType1) {
-    packType2 = randomPick(ALL_BOOSTER_TYPES);
+    packType2 = randomPick(ALL_BOOSTER_TYPES, rng);
   }
 
   const pack1: BoosterSlot = { type: packType1, price: BOOSTER_PRICES[packType1] };
   const pack2: BoosterSlot = { type: packType2, price: BOOSTER_PRICES[packType2] };
 
-  // Random joker
-  const jokerItem = randomPick(
-    Array.from({ length: 5 }, () => randomPick(
-      gameState.jokers.length > 0
-        ? gameState.jokers.map(j => j.id)
-        : ['joker', 'greedy_joker', 'sly_joker', 'smiley_face', 'scary_face']
-    ))
-  );
+  // Random joker from full pool
+  const allJokers = getAllJokers();
+  const pickedJoker = allJokers.length > 0 ? randomPick(allJokers, rng) : null;
+  const jokerItemId = pickedJoker?.id ?? 'joker';
+  const jokerPrice = pickedJoker?.cost ?? 5;
 
   // Random tarot
-  const tarot = randomPick(TAROT_CARDS);
+  const tarot = randomPick(TAROT_CARDS, rng);
   // Random planet
-  const planet = randomPick(PLANET_CARDS);
+  const planet = randomPick(PLANET_CARDS, rng);
   // Random voucher
-  const voucher = randomPick(VOUCHERS);
+  const voucher = randomPick(VOUCHERS, rng);
 
   // Compute utilities
-  const jokerU = jokerItem ? getJokerUtility(jokerItem, gameState) : 0;
+  const jokerU = getJokerUtility(jokerItemId, gameState);
   const tarotU = tarot.utilityFn(gameState);
   const planetU = planet.utilityFn(gameState);
   const voucherU = voucher.utilityFn(gameState);
@@ -435,7 +434,7 @@ export function generateShop(gameState: GameState, dollars: number): GeneratedSh
   const purchases: { name: string; utility: number; price: number }[] = [
     { name: 'Pack 1', utility: pack1U, price: pack1.price },
     { name: 'Pack 2', utility: pack2U, price: pack2.price },
-    { name: 'Joker', utility: jokerU, price: 5 },
+    { name: 'Joker', utility: jokerU, price: jokerPrice },
     { name: 'Tarot', utility: tarotU, price: 3 },
     { name: 'Planet', utility: planetU, price: 3 },
     { name: 'Voucher', utility: voucherU, price: voucher.price },
@@ -451,7 +450,7 @@ export function generateShop(gameState: GameState, dollars: number): GeneratedSh
     { label: 'Pack 2', item: null, itemType: 'pack', pack: pack2 },
     {
       label: 'Joker', itemType: 'joker',
-      item: { type: 'joker', jokerId: jokerItem, name: jokerItem, nameZh: jokerItem, price: 5, utilityFn: () => jokerU },
+      item: { type: 'joker', jokerId: jokerItemId, name: jokerItemId, nameZh: jokerItemId, price: jokerPrice, utilityFn: () => jokerU },
     },
     {
       label: 'Tarot', itemType: 'tarot',

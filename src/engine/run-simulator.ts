@@ -2,20 +2,36 @@ import type {
   Card, GameState, JokerInstance, HandLevels,
   DeckComposition, ScoringBreakdown,
 } from './types';
-import { HandType, BlindType, Rank, Suit, ALL_RANKS, ALL_SUITS, CardEdition } from './types';
-import { getBlindBaseChips } from './constants';
+import { HandType, BlindType, ALL_RANKS, ALL_SUITS, CardEdition } from './types';
+import type { Rank, Suit } from './types';
 import { findOptimalPlay } from './search';
 import type { SearchConfig } from './search';
 import { quickDiscardTip } from './discard-analyzer';
 import { generateShop } from './shop';
 import { getJoker } from './joker-effects';
+import { createRng } from './rng';
+import { buildAggregateFromCards } from './deck';
+import type { DeckCardSlot } from './types';
+import {
+  getAnteBlindDef, getBossEffect, BOSS_BLINDS, BOSS_POOL,
+} from './boss-data';
+import type { BossEffect } from './boss-data';
+import { calculateRoundEarnings, calculateJokerIncome } from './economy';
+
+// Re-export extracted modules for backward compatibility
+export { calculateInterest, calculateRoundEarnings, calculateJokerIncome } from './economy';
+export type { JokerIncomeInput } from './economy';
+export {
+  getAnteBlindDef, getBossEffect, BOSS_BLINDS, BOSS_POOL,
+} from './boss-data';
+export type { BossEffect, BossBlindDef, AnteBlindDef } from './boss-data';
 
 // ─── Types ──────────────────────────────────────────────────────
 
 export interface RunConfig {
   maxAntes: number;
   enableShop: boolean;
-  seed?: number;
+  seed?: number | string;
   handSelectionStrategy: 'auto' | 'first';
   randomBosses?: boolean;
 }
@@ -55,44 +71,6 @@ export interface RunResult {
   totalSimulationTimeMs: number;
 }
 
-export interface BossEffect {
-  maxHandsOverride?: number;
-  maxDiscardsOverride?: number;
-  chipsMultiplier?: number;
-  debuffedSuits?: Suit[];
-  debuffedRanks?: Rank[];
-  noRepeatHandType?: boolean;
-  halveBaseHand?: boolean;
-  reduceHandLevel?: boolean;
-  handSizeModifier?: number;
-  drawCardsAfterPlay?: number;
-  costPerCardPlayed?: number;
-  restrictToFirstHandType?: boolean;
-  mustPlayFiveCards?: boolean;
-  resetMoneyOnMostPlayedHand?: boolean;
-  debuffRandomCardsInHand?: number;
-  debuffScoredCardsThisAnte?: boolean;
-  disableRandomJoker?: boolean;
-  shuffleJokers?: boolean;
-  forceRandomCard?: boolean;
-  debuffAllCardsUntilSell?: boolean;
-}
-
-export interface BossBlindDef {
-  id: string;
-  name: string;
-  effect: BossEffect;
-}
-
-export interface AnteBlindDef {
-  ante: number;
-  smallChips: number;
-  bigChips: number;
-  bossChips: number;
-  bossId: string;
-  bossName: string;
-}
-
 // ─── Default Config ──────────────────────────────────────────────
 
 const DEFAULT_RUN_CONFIG: RunConfig = {
@@ -101,207 +79,6 @@ const DEFAULT_RUN_CONFIG: RunConfig = {
   handSelectionStrategy: 'auto',
 };
 
-// ─── Seeded RNG (Linear Congruential) ────────────────────────────
-
-function createRng(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-// ─── Boss Blind Definitions ──────────────────────────────────────
-
-export const BOSS_BLINDS: Record<string, BossBlindDef> = {
-  the_needle: {
-    id: 'the_needle',
-    name: 'The Needle',
-    effect: { maxHandsOverride: 1 },
-  },
-  the_eye: {
-    id: 'the_eye',
-    name: 'The Eye',
-    effect: { noRepeatHandType: true },
-  },
-  the_wall: {
-    id: 'the_wall',
-    name: 'The Wall',
-    effect: { chipsMultiplier: 4 },
-  },
-  the_water: {
-    id: 'the_water',
-    name: 'The Water',
-    effect: { maxDiscardsOverride: 0 },
-  },
-  the_arm: {
-    id: 'the_arm',
-    name: 'The Arm',
-    effect: { reduceHandLevel: true },
-  },
-  the_flint: {
-    id: 'the_flint',
-    name: 'The Flint',
-    effect: { halveBaseHand: true },
-  },
-  the_manacle: {
-    id: 'the_manacle',
-    name: 'The Manacle',
-    effect: { handSizeModifier: -1 },
-  },
-  the_serpent: {
-    id: 'the_serpent',
-    name: 'The Serpent',
-    effect: { drawCardsAfterPlay: 3 },
-  },
-  // Easy debuff blinds
-  the_club: {
-    id: 'the_club',
-    name: 'The Club',
-    effect: { debuffedSuits: [Suit.Clubs] },
-  },
-  the_goad: {
-    id: 'the_goad',
-    name: 'The Goad',
-    effect: { debuffedSuits: [Suit.Spades] },
-  },
-  the_head: {
-    id: 'the_head',
-    name: 'The Head',
-    effect: { debuffedSuits: [Suit.Hearts] },
-  },
-  the_window: {
-    id: 'the_window',
-    name: 'The Window',
-    effect: { debuffedSuits: [Suit.Diamonds] },
-  },
-  the_plant: {
-    id: 'the_plant',
-    name: 'The Plant',
-    effect: { debuffedRanks: [Rank.Jack, Rank.Queen, Rank.King] },
-  },
-  the_tooth: {
-    id: 'the_tooth',
-    name: 'The Tooth',
-    effect: { costPerCardPlayed: 1 },
-  },
-  violet_vessel: {
-    id: 'violet_vessel',
-    name: 'Violet Vessel',
-    effect: { chipsMultiplier: 6 },
-  },
-  // Medium complexity blinds
-  the_mouth: {
-    id: 'the_mouth',
-    name: 'The Mouth',
-    effect: { restrictToFirstHandType: true },
-  },
-  the_psychic: {
-    id: 'the_psychic',
-    name: 'The Psychic',
-    effect: { mustPlayFiveCards: true },
-  },
-  the_ox: {
-    id: 'the_ox',
-    name: 'The Ox',
-    effect: { resetMoneyOnMostPlayedHand: true },
-  },
-  // No-op blinds (face-down mechanics, no effect on perfect-information simulator)
-  the_fish: {
-    id: 'the_fish',
-    name: 'The Fish',
-    effect: {},
-  },
-  the_house: {
-    id: 'the_house',
-    name: 'The House',
-    effect: {},
-  },
-  the_mark: {
-    id: 'the_mark',
-    name: 'The Mark',
-    effect: {},
-  },
-  the_wheel: {
-    id: 'the_wheel',
-    name: 'The Wheel',
-    effect: {},
-  },
-  the_hook: {
-    id: 'the_hook',
-    name: 'The Hook',
-    effect: { debuffRandomCardsInHand: 2 },
-  },
-  the_pillar: {
-    id: 'the_pillar',
-    name: 'The Pillar',
-    effect: { debuffScoredCardsThisAnte: true },
-  },
-  verdant_leaf: {
-    id: 'verdant_leaf',
-    name: 'Verdant Leaf',
-    effect: { debuffAllCardsUntilSell: true },
-  },
-  crimson_heart: {
-    id: 'crimson_heart',
-    name: 'Crimson Heart',
-    effect: { disableRandomJoker: true },
-  },
-  cerulean_bell: {
-    id: 'cerulean_bell',
-    name: 'Cerulean Bell',
-    effect: { forceRandomCard: true },
-  },
-  amber_acorn: {
-    id: 'amber_acorn',
-    name: 'Amber Acorn',
-    effect: { shuffleJokers: true },
-  },
-};
-
-// Boss pool for random selection (all 28 implemented bosses)
-export const BOSS_POOL: string[] = [
-  'the_needle', 'the_eye', 'the_wall', 'the_water',
-  'the_arm', 'the_flint', 'the_manacle', 'the_serpent',
-  'the_club', 'the_goad', 'the_head', 'the_window',
-  'the_plant', 'the_tooth', 'violet_vessel',
-  'the_mouth', 'the_psychic', 'the_ox',
-  'the_fish', 'the_house', 'the_mark', 'the_wheel',
-  'the_hook', 'the_pillar', 'verdant_leaf',
-  'crimson_heart', 'cerulean_bell', 'amber_acorn',
-];
-
-// Boss rotation per ante (index = ante-1)
-const BOSS_ROTATION: string[] = [
-  'the_needle',   // Ante 1
-  'the_eye',      // Ante 2
-  'the_wall',     // Ante 3
-  'the_water',    // Ante 4
-  'the_arm',      // Ante 5
-  'the_flint',    // Ante 6
-  'the_manacle',  // Ante 7
-  'the_serpent',  // Ante 8
-];
-
-// ─── Ante/Blind Progression ──────────────────────────────────────
-
-export function getAnteBlindDef(ante: number): AnteBlindDef {
-  const bossId = BOSS_ROTATION[Math.min(ante, BOSS_ROTATION.length) - 1] ?? 'the_needle';
-  const bossDef = BOSS_BLINDS[bossId];
-  return {
-    ante,
-    smallChips: getBlindBaseChips(ante, 'small'),
-    bigChips: getBlindBaseChips(ante, 'big'),
-    bossChips: getBlindBaseChips(ante, 'boss'),
-    bossId,
-    bossName: bossDef?.name ?? 'Unknown Boss',
-  };
-}
-
-export function getBossEffect(bossId: string): BossEffect {
-  return BOSS_BLINDS[bossId]?.effect ?? {};
-}
-
 // ─── Hand Drawing ────────────────────────────────────────────────
 
 export interface DrawResult {
@@ -309,26 +86,51 @@ export interface DrawResult {
   deck: DeckComposition;
 }
 
-function pickRandomFromCounts<T extends string>(
-  counts: Partial<Record<T, number>> | undefined,
+/**
+ * Partial Fisher-Yates shuffle: pick `count` random cards from the deck.cards
+ * array without mutating the original. Returns drawn cards and updated deck.
+ */
+function drawHandFromCards(
+  deck: DeckComposition,
+  count: number,
   rng: () => number,
-): T {
-  if (!counts) return 'none' as T;
-  const entries = Object.entries(counts) as [T, number][];
-  const available = entries.filter(([, count]) => (count as number) > 0);
-  if (available.length === 0) return 'none' as T;
-  const totalWeight = available.reduce((sum, [, count]) => sum + (count as number), 0);
-  let rand = rng() * totalWeight;
-  for (const [key, count] of available) {
-    rand -= count as number;
-    if (rand <= 0) return key;
+): DrawResult {
+  const pool = [...deck.cards!];
+  const drawn: DeckCardSlot[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(rng() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+    drawn.push(pool[i]);
   }
-  return available[available.length - 1][0];
+
+  const remaining = pool.slice(count);
+
+  const cards: Card[] = drawn.map((c, i) => ({
+    id: `sim_${c.rank}_${c.suit}_${i}`,
+    rank: c.rank,
+    suit: c.suit,
+    enhancement: c.enhancement,
+    edition: c.edition,
+    seal: c.seal,
+    debuffed: false,
+  }));
+
+  return {
+    cards,
+    deck: {
+      ...buildAggregateFromCards(remaining),
+      cards: remaining,
+    },
+  };
 }
 
-export function drawHand(
+/**
+ * Fallback: approximate draw from aggregate counts when deck.cards is unavailable.
+ */
+function drawHandFromAggregates(
   deck: DeckComposition,
-  handSize: number,
+  actualDraw: number,
   rng: () => number,
 ): DrawResult {
   const cards: Card[] = [];
@@ -338,12 +140,9 @@ export function drawHand(
   let editionCounts = { ...deck.editionCounts };
   let sealCounts = { ...deck.sealCounts };
   let totalCards = deck.totalCards;
-
-  const actualDraw = Math.min(handSize, totalCards);
   let cardCounter = 0;
 
   for (let i = 0; i < actualDraw; i++) {
-    // Weighted random rank selection
     const rankEntries = ALL_RANKS.filter(r => (remainingByRank[r] ?? 0) > 0);
     if (rankEntries.length === 0) break;
 
@@ -353,13 +152,9 @@ export function drawHand(
     let selectedRank = rankEntries[0];
     for (let j = 0; j < rankEntries.length; j++) {
       randRank -= rankWeights[j];
-      if (randRank <= 0) {
-        selectedRank = rankEntries[j];
-        break;
-      }
+      if (randRank <= 0) { selectedRank = rankEntries[j]; break; }
     }
 
-    // Select a suit that still has this rank available
     const suitEntries = ALL_SUITS.filter(s => (remainingBySuit[s] ?? 0) > 0);
     const suitWeights = suitEntries.map(s => remainingBySuit[s] ?? 0);
     const totalSuitWeight = suitWeights.reduce((a, b) => a + b, 0);
@@ -367,118 +162,63 @@ export function drawHand(
     let selectedSuit = suitEntries[0];
     for (let j = 0; j < suitEntries.length; j++) {
       randSuit -= suitWeights[j];
-      if (randSuit <= 0) {
-        selectedSuit = suitEntries[j];
-        break;
-      }
+      if (randSuit <= 0) { selectedSuit = suitEntries[j]; break; }
     }
 
-    const selectedEnhancement = pickRandomFromCounts(enhancementCounts, rng);
-    const selectedEdition = pickRandomFromCounts(editionCounts, rng);
-    const selectedSeal = pickRandomFromCounts(sealCounts, rng);
+    const enhEntries = Object.entries(enhancementCounts).filter(([, c]) => c > 0) as [string, number][];
+    const enhTotal = enhEntries.reduce((s, [, c]) => s + c, 0);
+    let randEnh = rng() * enhTotal;
+    let selectedEnh = enhEntries[0]?.[0] ?? 'none';
+    for (const [k, c] of enhEntries) { randEnh -= c; if (randEnh <= 0) { selectedEnh = k; break; } }
+
+    const edEntries = Object.entries(editionCounts).filter(([, c]) => c > 0) as [string, number][];
+    const edTotal = edEntries.reduce((s, [, c]) => s + c, 0);
+    let randEd = rng() * edTotal;
+    let selectedEd = edEntries[0]?.[0] ?? 'none';
+    for (const [k, c] of edEntries) { randEd -= c; if (randEd <= 0) { selectedEd = k; break; } }
+
+    const sealEntries = Object.entries(sealCounts).filter(([, c]) => c > 0) as [string, number][];
+    const sealTotal = sealEntries.reduce((s, [, c]) => s + c, 0);
+    let randSeal = rng() * sealTotal;
+    let selectedSeal = sealEntries[0]?.[0] ?? 'none';
+    for (const [k, c] of sealEntries) { randSeal -= c; if (randSeal <= 0) { selectedSeal = k; break; } }
 
     cards.push({
       id: `sim_${selectedRank}_${selectedSuit}_${cardCounter++}`,
-      rank: selectedRank,
-      suit: selectedSuit,
-      enhancement: selectedEnhancement,
-      edition: selectedEdition,
-      seal: selectedSeal,
+      rank: selectedRank as Rank,
+      suit: selectedSuit as Suit,
+      enhancement: selectedEnh as Card['enhancement'],
+      edition: selectedEd as Card['edition'],
+      seal: selectedSeal as Card['seal'],
       debuffed: false,
     });
 
-    remainingByRank[selectedRank] = Math.max(0, (remainingByRank[selectedRank] ?? 0) - 1);
-    remainingBySuit[selectedSuit] = Math.max(0, (remainingBySuit[selectedSuit] ?? 0) - 1);
-    enhancementCounts[selectedEnhancement] = Math.max(0, (enhancementCounts[selectedEnhancement] ?? 0) - 1);
-    editionCounts[selectedEdition] = Math.max(0, (editionCounts[selectedEdition] ?? 0) - 1);
-    sealCounts[selectedSeal] = Math.max(0, (sealCounts[selectedSeal] ?? 0) - 1);
+    remainingByRank[selectedRank as Rank] = Math.max(0, (remainingByRank[selectedRank as Rank] ?? 0) - 1);
+    remainingBySuit[selectedSuit as Suit] = Math.max(0, (remainingBySuit[selectedSuit as Suit] ?? 0) - 1);
+    enhancementCounts[selectedEnh as keyof typeof enhancementCounts] = Math.max(0, (enhancementCounts[selectedEnh as keyof typeof enhancementCounts] ?? 0) - 1);
+    editionCounts[selectedEd as keyof typeof editionCounts] = Math.max(0, (editionCounts[selectedEd as keyof typeof editionCounts] ?? 0) - 1);
+    sealCounts[selectedSeal as keyof typeof sealCounts] = Math.max(0, (sealCounts[selectedSeal as keyof typeof sealCounts] ?? 0) - 1);
     totalCards--;
   }
 
   return {
     cards,
-    deck: {
-      ...deck,
-      totalCards,
-      remainingByRank,
-      remainingBySuit,
-      enhancementCounts,
-      editionCounts,
-      sealCounts,
-    },
+    deck: { ...deck, totalCards, remainingByRank, remainingBySuit, enhancementCounts, editionCounts, sealCounts },
   };
 }
 
-// ─── Economics ───────────────────────────────────────────────────
+export function drawHand(
+  deck: DeckComposition,
+  handSize: number,
+  rng: () => number,
+): DrawResult {
+  const actualDraw = Math.min(handSize, deck.totalCards);
 
-export function calculateInterest(dollars: number, jokerIds?: string[]): number {
-  const cap = jokerIds?.includes('to_the_moon') ? 10 : 5;
-  return Math.min(cap, Math.floor(dollars / 5));
-}
-
-export function calculateRoundEarnings(dollars: number, _handsUsed: number, blindBeaten: boolean, jokerIds?: string[]): number {
-  if (!blindBeaten) return 0;
-  const base = 3;
-  const interest = calculateInterest(dollars, jokerIds);
-  return base + interest;
-}
-
-export interface JokerIncomeInput {
-  jokers: JokerInstance[];
-  deck: DeckComposition;
-  discardsUsed: number;
-  maxDiscards: number;
-  cumulativeDollars: number;
-  playedCards: Card[];
-  heldCards: Card[];
-  roundNumber: number;
-  totalCardsDiscarded: number;
-}
-
-export function calculateJokerIncome(input: JokerIncomeInput): number {
-  let income = 0;
-
-  for (const joker of input.jokers) {
-    switch (joker.id) {
-      case 'golden':
-        income += 4;
-        break;
-      case 'rocket':
-        income += 1 + (input.roundNumber - 1) * 2;
-        break;
-      case 'delayed_gratification':
-        income += 2 * (input.maxDiscards - input.discardsUsed);
-        break;
-      case 'cloud_9': {
-        const nineCount = input.deck.remainingByRank[Rank.Nine] ?? 0;
-        income += nineCount;
-        break;
-      }
-      case 'rough_gem': {
-        const diamondCount = input.deck.remainingBySuit[Suit.Diamonds] ?? 0;
-        income += diamondCount;
-        break;
-      }
-      case 'gift':
-        income += input.discardsUsed;
-        break;
-      case 'reserved_parking': {
-        const heldFaceCards = input.heldCards.filter(c => c.rank === Rank.Jack || c.rank === Rank.Queen || c.rank === Rank.King).length;
-        income += Math.round(heldFaceCards * 0.5);
-        break;
-      }
-      case 'business': {
-        const playedFaceCards = input.playedCards.filter(c => c.rank === Rank.Jack || c.rank === Rank.Queen || c.rank === Rank.King).length;
-        income += Math.round(playedFaceCards * 0.5 * 2);
-        break;
-      }
-      case 'mail':
-        income += input.totalCardsDiscarded;
-        break;
-    }
+  if (deck.cards && deck.cards.length >= actualDraw) {
+    return drawHandFromCards(deck, actualDraw, rng);
   }
 
-  return income;
+  return drawHandFromAggregates(deck, actualDraw, rng);
 }
 
 // ─── State Cloning ──────────────────────────────────────────────
@@ -512,6 +252,137 @@ function cloneHandLevels(levels: HandLevels): HandLevels {
 }
 
 // ─── Main Simulator ──────────────────────────────────────────────
+
+interface BlindContext {
+  maxHands: number;
+  maxDiscards: number;
+  handSize: number;
+  chipsRequired: number;
+  debuffRanks: Rank[] | undefined;
+  debuffSuits: Suit[] | undefined;
+  bossEffect: BossEffect;
+  blind: { type: BlindType; chips: number; bossId: string | null };
+}
+
+function setupBlindContext(
+  blind: { type: BlindType; chips: number; bossId: string | null },
+  state: GameState,
+  bossEffect: BossEffect,
+): BlindContext {
+  const bossMultiplier = bossEffect.chipsMultiplier ?? 1;
+  const maxHands = bossEffect.maxHandsOverride ?? state.roundState.maxHands;
+  const maxDiscards = bossEffect.maxDiscardsOverride ?? state.roundState.maxDiscards;
+  let handSize = state.roundState.handSize;
+  if (bossEffect.handSizeModifier) handSize = Math.max(1, handSize + bossEffect.handSizeModifier);
+
+  return {
+    maxHands,
+    maxDiscards,
+    handSize,
+    chipsRequired: Math.round(blind.chips * bossMultiplier),
+    debuffRanks: bossEffect.debuffedRanks,
+    debuffSuits: bossEffect.debuffedSuits,
+    bossEffect,
+    blind,
+  };
+}
+
+function markDebuffedCards(
+  cards: Card[],
+  ctx: BlindContext,
+  cardsScoredThisAnte: Set<string>,
+) {
+  const { debuffRanks, debuffSuits } = ctx;
+  if (!debuffRanks && !debuffSuits && cardsScoredThisAnte.size === 0) return;
+  for (const card of cards) {
+    if ((debuffRanks?.includes(card.rank)) ||
+        (debuffSuits?.includes(card.suit)) ||
+        cardsScoredThisAnte.has(card.id)) {
+      card.debuffed = true;
+    }
+  }
+}
+
+function runShopPhase(
+  state: GameState,
+  cumulativeDollars: number,
+  rng: () => number,
+  effectiveHandLevels: HandLevels,
+): number {
+  try {
+    const shop = generateShop(state, cumulativeDollars, rng);
+
+    const collectAffordable = (slots: typeof shop.state.slots) =>
+      slots
+        .filter(s => s.item && s.item.price <= cumulativeDollars && s.itemType !== 'pack')
+        .map(s => ({
+          slot: s,
+          utilityPerDollar: s.item!.price > 0
+            ? ((s.item as { utilityFn?: (gs: GameState) => number }).utilityFn?.(state) ?? 0) / s.item!.price
+            : 0,
+        }))
+        .sort((a, b) => b.utilityPerDollar - a.utilityPerDollar);
+
+    const affordableItems = collectAffordable(shop.state.slots);
+
+    // Reroll up to 2 times if no good items
+    let shopRerolls = 0;
+    while (affordableItems.length === 0 && shopRerolls < 2 && cumulativeDollars >= shop.state.rerollCost + 3) {
+      cumulativeDollars -= shop.state.rerollCost;
+      shopRerolls++;
+      const newShop = generateShop(state, cumulativeDollars, rng);
+      affordableItems.push(...collectAffordable(newShop.state.slots));
+      affordableItems.sort((a, b) => b.utilityPerDollar - a.utilityPerDollar);
+    }
+
+    // Buy best items (up to 3, keeping $5 reserve)
+    let purchases = 0;
+    for (const item of affordableItems) {
+      if (purchases >= 3) break;
+      const price = item.slot.item!.price;
+      if (price > cumulativeDollars - 5) continue;
+
+      cumulativeDollars -= price;
+      purchases++;
+
+      const slot = item.slot;
+      if (slot.itemType === 'joker' && 'jokerId' in slot.item!) {
+        if (state.jokers.length < 7) {
+          state.jokers.push({ id: slot.item.jokerId, edition: CardEdition.None });
+        }
+      } else if (slot.itemType === 'planet' && 'handType' in slot.item!) {
+        const handType = slot.item.handType;
+        state.handLevels[handType] = (state.handLevels[handType] ?? 1) + 1;
+        effectiveHandLevels[handType] = state.handLevels[handType];
+      } else if (slot.itemType === 'tarot' && 'id' in slot.item!) {
+        if (slot.item.id === 'the_hermit') {
+          cumulativeDollars += Math.min(cumulativeDollars, 20);
+        } else if (slot.item.id === 'temperance') {
+          let sellValue = 0;
+          for (const j of state.jokers) {
+            const def = getJoker(j.id);
+            if (def) sellValue += Math.floor(def.cost / 2);
+          }
+          cumulativeDollars += Math.min(sellValue, 50);
+        }
+      } else if (slot.itemType === 'voucher') {
+        const voucherId = ('id' in slot.item!) ? slot.item.id : '';
+        switch (voucherId) {
+          case 'grabber': case 'nacho_tong':
+            state.roundState.maxHands += 1; break;
+          case 'wasteful': case 'recyclomancy':
+            state.roundState.maxDiscards += 1; break;
+          case 'paint_brush': case 'palette':
+            state.roundState.handSize += 1; break;
+        }
+      }
+    }
+    state.roundState.dollars = cumulativeDollars;
+  } catch {
+    // Shop generation may fail; skip
+  }
+  return cumulativeDollars;
+}
 
 export function simulateRun(
   startingState: GameState,
@@ -560,16 +431,7 @@ export function simulateRun(
       }
 
       const bossEffect = blind.bossId ? getBossEffect(blind.bossId) : {};
-      const bossMultiplier = bossEffect.chipsMultiplier ?? 1;
-      const chipsRequired = Math.round(blind.chips * bossMultiplier);
-
-      // Apply boss effect overrides
-      const maxHands = bossEffect.maxHandsOverride ?? state.roundState.maxHands;
-      const maxDiscards = bossEffect.maxDiscardsOverride ?? state.roundState.maxDiscards;
-      let handSize = state.roundState.handSize;
-      if (bossEffect.handSizeModifier) {
-        handSize = Math.max(1, handSize + bossEffect.handSizeModifier);
-      }
+      const bctx = setupBlindContext(blind, state, bossEffect);
       let handsPlayed = 0;
       let discardsUsed = 0;
       let totalCardsDiscardedThisBlind = 0;
@@ -577,22 +439,11 @@ export function simulateRun(
       const playedHandTypesThisBlind: HandType[] = [];
 
       // Deal hand
-      const draw = drawHand(state.deckComposition, handSize, rng);
+      const draw = drawHand(state.deckComposition, bctx.handSize, rng);
       let currentHandCards = draw.cards;
       let currentDeck = draw.deck;
 
-      // Mark debuffed cards from boss effect (suit/rank debuffs)
-      const debuffRanks = bossEffect.debuffedRanks;
-      const debuffSuits = bossEffect.debuffedSuits;
-      if (debuffRanks || debuffSuits || cardsScoredThisAnte.size > 0) {
-        for (const card of currentHandCards) {
-          if ((debuffRanks && debuffRanks.includes(card.rank)) ||
-              (debuffSuits && debuffSuits.includes(card.suit)) ||
-              cardsScoredThisAnte.has(card.id)) {
-            card.debuffed = true;
-          }
-        }
-      }
+      markDebuffedCards(currentHandCards, bctx, cardsScoredThisAnte);
 
       // Boss effect: Verdant Leaf — all cards debuffed until joker sold
       let verdantDebuffActive = false;
@@ -653,17 +504,17 @@ export function simulateRun(
       }
 
       // Play/discard loop
-      for (let handAttempt = 0; handAttempt < maxHands; handAttempt++) {
+      for (let handAttempt = 0; handAttempt < bctx.maxHands; handAttempt++) {
         if (currentHandCards.length === 0) break;
 
         const roundState = {
           ...state.roundState,
           handsPlayed,
           discardsUsed,
-          maxHands,
-          maxDiscards,
-          handSize,
-          isFinalHand: handAttempt === maxHands - 1,
+          maxHands: bctx.maxHands,
+          maxDiscards: bctx.maxDiscards,
+          handSize: bctx.handSize,
+          isFinalHand: handAttempt === bctx.maxHands - 1,
         };
 
         const playState: GameState = {
@@ -675,7 +526,7 @@ export function simulateRun(
           roundState,
           blind: {
             type: blind.type,
-            chipsRequired,
+            chipsRequired: bctx.chipsRequired,
             debuffedRanks: bossEffect.debuffedRanks ?? [],
             debuffedSuits: bossEffect.debuffedSuits ?? [],
             bossId: blind.bossId ?? undefined,
@@ -704,7 +555,7 @@ export function simulateRun(
         const score = optimal.totalScore;
 
         // Check if blind is beaten
-        if (score >= chipsRequired) {
+        if (score >= bctx.chipsRequired) {
           blindBeaten = true;
           break;
         }
@@ -774,7 +625,7 @@ export function simulateRun(
         }
 
         // Try discarding if available
-        if (discardsUsed < maxDiscards) {
+        if (discardsUsed < bctx.maxDiscards) {
           const tip = quickDiscardTip(
             { ...playState, roundState: { ...roundState, handsPlayed, discardsUsed } },
           );
@@ -783,15 +634,15 @@ export function simulateRun(
             // Remove discarded cards
             const newHand = currentHandCards.filter((_, i) => !tip.discardIndices.includes(i));
             // Draw replacements
-            const redraw = drawHand(currentDeck, handSize - newHand.length, rng);
+            const redraw = drawHand(currentDeck, bctx.handSize - newHand.length, rng);
             currentHandCards = [...newHand, ...redraw.cards];
             currentDeck = redraw.deck;
             // Mark newly drawn debuffed cards
-            if (debuffRanks || debuffSuits || cardsScoredThisAnte.size > 0 || verdantDebuffActive) {
+            if (bctx.debuffRanks || bctx.debuffSuits || cardsScoredThisAnte.size > 0 || verdantDebuffActive) {
               for (const card of redraw.cards) {
                 if (verdantDebuffActive ||
-                    (debuffRanks && debuffRanks.includes(card.rank)) ||
-                    (debuffSuits && debuffSuits.includes(card.suit)) ||
+                    (bctx.debuffRanks && bctx.debuffRanks.includes(card.rank)) ||
+                    (bctx.debuffSuits && bctx.debuffSuits.includes(card.suit)) ||
                     cardsScoredThisAnte.has(card.id)) {
                   card.debuffed = true;
                 }
@@ -810,12 +661,12 @@ export function simulateRun(
              blind.type === BlindType.Big ? 'Big Blind' : 'Boss Blind');
 
         const jokerIds = state.jokers.map(j => j.id);
-        const baseEarnings = calculateRoundEarnings(cumulativeDollars, handsPlayed, blindBeaten, jokerIds);
+        const baseEarnings = calculateRoundEarnings(cumulativeDollars, blindBeaten, jokerIds);
         const jokerIncome = blindBeaten ? calculateJokerIncome({
           jokers: state.jokers,
           deck: currentDeck,
           discardsUsed,
-          maxDiscards,
+          maxDiscards: bctx.maxDiscards,
           cumulativeDollars,
           playedCards: finalCardsPlayed,
           heldCards: finalCardsHeld,
@@ -831,13 +682,13 @@ export function simulateRun(
           blindType: blind.type,
           blindName,
           bossId: blind.bossId,
-          chipsRequired,
+          chipsRequired: bctx.chipsRequired,
           handTypePlayed: finalHandType,
           cardsPlayed: finalCardsPlayed,
           cardsHeld: finalCardsHeld,
           totalScore: finalScoredPlay.finalScore,
           blindBeaten,
-          handsUsed: handsPlayed + 1,
+          handsUsed: blindBeaten ? handsPlayed + 1 : handsPlayed,
           discardsUsed,
           scoreBreakdown: finalScoredPlay,
           jokersAtRound,
@@ -857,7 +708,7 @@ export function simulateRun(
           blindType: blind.type,
           blindName: blind.bossId ? (BOSS_BLINDS[blind.bossId]?.name ?? 'Boss Blind') : 'Small Blind',
           bossId: blind.bossId,
-          chipsRequired,
+          chipsRequired: bctx.chipsRequired,
           handTypePlayed: HandType.HighCard,
           cardsPlayed: [],
           cardsHeld: [],
@@ -882,95 +733,7 @@ export function simulateRun(
 
       // Shop phase (only if blind beaten)
       if (blindBeaten && cfg.enableShop) {
-        try {
-          const shop = generateShop(state, cumulativeDollars);
-
-          // Sort affordable (non-pack) items by utility/dollar
-          const affordableItems = shop.state.slots
-            .filter(s => s.item && s.item.price <= cumulativeDollars && s.itemType !== 'pack')
-            .map(s => ({
-              slot: s,
-              utilityPerDollar: s.item!.price > 0
-                ? ((s.item as { utilityFn?: (gs: GameState) => number }).utilityFn?.(state) ?? 0) / s.item!.price
-                : 0,
-            }))
-            .sort((a, b) => b.utilityPerDollar - a.utilityPerDollar);
-
-          // Reroll if no good items available and we have money
-          let shopRerolls = 0;
-          const MAX_REROLLS = 2;
-          while (affordableItems.length === 0 && shopRerolls < MAX_REROLLS && cumulativeDollars >= shop.state.rerollCost + 3) {
-            cumulativeDollars -= shop.state.rerollCost;
-            shopRerolls++;
-            const newShop = generateShop(state, cumulativeDollars);
-            const newAffordable = newShop.state.slots
-              .filter(s => s.item && s.item.price <= cumulativeDollars && s.itemType !== 'pack');
-            affordableItems.push(...newAffordable.map(s => ({
-              slot: s,
-              utilityPerDollar: s.item!.price > 0
-                ? ((s.item as { utilityFn?: (gs: GameState) => number }).utilityFn?.(state) ?? 0) / s.item!.price
-                : 0,
-            })));
-            affordableItems.sort((a, b) => b.utilityPerDollar - a.utilityPerDollar);
-          }
-
-          // Buy best items (up to 3 purchases, keeping at least $5 reserve)
-          const MAX_PURCHASES = 3;
-          let purchases = 0;
-          for (const item of affordableItems) {
-            if (purchases >= MAX_PURCHASES) break;
-            const price = item.slot.item!.price;
-            if (price > cumulativeDollars - 5) continue; // Keep $5 reserve minimum
-
-            cumulativeDollars -= price;
-            purchases++;
-
-            const slot = item.slot;
-            if (slot.itemType === 'joker' && 'jokerId' in slot.item!) {
-              if (state.jokers.length < 7) {
-                state.jokers.push({ id: slot.item.jokerId, edition: CardEdition.None });
-              }
-            } else if (slot.itemType === 'planet' && 'handType' in slot.item!) {
-              const handType = slot.item.handType;
-              state.handLevels[handType] = (state.handLevels[handType] ?? 1) + 1;
-              effectiveHandLevels[handType] = state.handLevels[handType];
-            } else if (slot.itemType === 'tarot' && 'id' in slot.item!) {
-              const tarotId = slot.item.id;
-              if (tarotId === 'the_hermit') {
-                cumulativeDollars += Math.min(cumulativeDollars, 20);
-              } else if (tarotId === 'temperance') {
-                // Total sell value of jokers (max $50)
-                let sellValue = 0;
-                for (const j of state.jokers) {
-                  const def = getJoker(j.id);
-                  if (def) sellValue += Math.floor(def.cost / 2);
-                }
-                cumulativeDollars += Math.min(sellValue, 50);
-              }
-              // Other tarot effects skipped (too complex for auto-sim)
-            } else if (slot.itemType === 'voucher') {
-              // Apply voucher effects
-              const voucherId = ('id' in slot.item!) ? slot.item.id : '';
-              switch (voucherId) {
-                case 'grabber':
-                case 'nacho_tong':
-                  state.roundState.maxHands += 1;
-                  break;
-                case 'wasteful':
-                case 'recyclomancy':
-                  state.roundState.maxDiscards += 1;
-                  break;
-                case 'paint_brush':
-                case 'palette':
-                  state.roundState.handSize += 1;
-                  break;
-              }
-            }
-          }
-          state.roundState.dollars = cumulativeDollars;
-        } catch {
-          // Shop generation may fail; skip
-        }
+        cumulativeDollars = runShopPhase(state, cumulativeDollars, rng, effectiveHandLevels);
       }
 
       // Reset for next blind

@@ -73,7 +73,20 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     switch (msg.type) {
       case 'search': {
-        const result = findOptimalPlays(msg.state, msg.config, msg.options);
+        const onProgress = (evaluated: number, total: number) => {
+          const response: WorkerProgressMessage = {
+            type: 'progress',
+            id: msg.id,
+            evaluated,
+            totalEstimate: total,
+          };
+          self.postMessage(response);
+        };
+        const result = findOptimalPlays(
+          msg.state,
+          { ...msg.config, onProgress },
+          msg.options,
+        );
         const response: WorkerResultMessage = {
           type: 'result',
           id: msg.id,

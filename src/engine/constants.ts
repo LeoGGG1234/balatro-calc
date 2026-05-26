@@ -1,4 +1,4 @@
-import { HandType, Rank, type HandLevels } from './types';
+import { HandType, Rank, BlindType, type HandLevels } from './types';
 
 // ─── Hand Base Values (at Level 1) & Planet Scaling ────────────
 
@@ -28,15 +28,6 @@ export const HAND_DEFINITIONS: Record<HandType, HandBase> = {
   [HandType.FiveOfAKind]:   { chips: 120, mult: 12, chipsPerLevel: 35, multPerLevel: 3,  maxPlayedCards: 5, minPlayedCards: 5, planetCard: 'Planet X', name: 'Five of a Kind',  nameZh: '五条' },
   [HandType.FlushHouse]:    { chips: 140, mult: 14, chipsPerLevel: 40, multPerLevel: 4,  maxPlayedCards: 5, minPlayedCards: 5, planetCard: 'Ceres',    name: 'Flush House',     nameZh: '同花葫芦' },
   [HandType.FlushFive]:     { chips: 160, mult: 16, chipsPerLevel: 50, multPerLevel: 3,  maxPlayedCards: 5, minPlayedCards: 5, planetCard: 'Eris',     name: 'Flush Five',      nameZh: '同花五条' },
-};
-
-// ─── Rank Chip Values ──────────────────────────────────────────
-
-export const RANK_CHIP_VALUES: Record<Rank, number> = {
-  [Rank.Two]: 2, [Rank.Three]: 3, [Rank.Four]: 4, [Rank.Five]: 5,
-  [Rank.Six]: 6, [Rank.Seven]: 7, [Rank.Eight]: 8, [Rank.Nine]: 9,
-  [Rank.Ten]: 10, [Rank.Jack]: 10, [Rank.Queen]: 10, [Rank.King]: 10,
-  [Rank.Ace]: 11,
 };
 
 // ─── Rank Order (for straight detection) ───────────────────────
@@ -72,12 +63,12 @@ export function getHandBaseMult(handType: HandType, level: number): number {
 
 // ─── Blinds base chips (ante scaling) ──────────────────────────
 
-export function getBlindBaseChips(ante: number, blindType: 'small' | 'big' | 'boss'): number {
+export function getBlindBaseChips(ante: number, blindType: BlindType): number {
   // Approximate scaling from Balatro wiki
   const base = 300 * Math.pow(1.6, ante - 1);
   switch (blindType) {
-    case 'small': return Math.round(base);
-    case 'big':   return Math.round(base * 1.5);
-    case 'boss':  return Math.round(base * 2);
+    case BlindType.Small: return Math.round(base);
+    case BlindType.Big:   return Math.round(base * 1.5);
+    case BlindType.Boss:  return Math.round(base * 2);
   }
 }

@@ -23,14 +23,14 @@ export function recognizeHand(playedCards: Card[], modifiers?: JokerModifiers): 
   const isFlush = checkFlush(scoringCards, totalEffectiveCards, stoneCount, modifiers);
   const straightResult = checkStraight(scoringCards, stoneCount, modifiers);
 
-  // Five of a Kind & Flush Five (need 5+ cards, same rank recurring)
-  if (totalEffectiveCards >= 5 && maxRank + stoneCount >= 5) {
+  // Five of a Kind & Flush Five (need 5 cards, all same rank)
+  if (totalEffectiveCards >= 5 && maxRank >= 5) {
     if (isFlush) return HandType.FlushFive;
-    if (maxRank + stoneCount >= 5) return HandType.FiveOfAKind;
+    return HandType.FiveOfAKind;
   }
 
   // Flush House & Full House (3+2 same suit)
-  if (totalEffectiveCards >= 5 && maxRank + stoneCount >= 3 && secondRank >= 2) {
+  if (totalEffectiveCards >= 5 && maxRank >= 3 && secondRank >= 2) {
     if (isFlush && scoringCards.length >= 5) return HandType.FlushHouse;
     return HandType.FullHouse;
   }
@@ -42,13 +42,7 @@ export function recognizeHand(playedCards: Card[], modifiers?: JokerModifiers): 
   }
 
   // Four of a Kind
-  if (maxRank + stoneCount >= 4) return HandType.FourOfAKind;
-
-  // Straight Flush without enough scoring cards but with stone cards
-  if (isFlush && straightResult !== null && totalEffectiveCards >= minCards) {
-    if (straightResult === 'royal') return HandType.RoyalFlush;
-    return HandType.StraightFlush;
-  }
+  if (maxRank >= 4) return HandType.FourOfAKind;
 
   // Straight
   if (straightResult !== null && totalEffectiveCards >= minCards) return HandType.Straight;
@@ -60,13 +54,13 @@ export function recognizeHand(playedCards: Card[], modifiers?: JokerModifiers): 
   if (maxRank >= 3 && secondRank >= 2) return HandType.FullHouse;
 
   // Three of a Kind
-  if (maxRank + stoneCount >= 3) return HandType.ThreeOfAKind;
+  if (maxRank >= 3) return HandType.ThreeOfAKind;
 
   // Two Pair
   if (maxRank >= 2 && secondRank >= 2) return HandType.TwoPair;
 
   // Pair
-  if (maxRank + stoneCount >= 2) return HandType.Pair;
+  if (maxRank >= 2) return HandType.Pair;
 
   // High Card
   return HandType.HighCard;
@@ -74,11 +68,11 @@ export function recognizeHand(playedCards: Card[], modifiers?: JokerModifiers): 
 
 // ─── Rank Counting ─────────────────────────────────────────────
 
-function countRanks(cards: Card[]): Record<Rank, number> {
-  const counts: Record<Rank, number> = {} as Record<Rank, number>;
+function countRanks(cards: Card[]): Partial<Record<Rank, number>> {
+  const counts: Partial<Record<Rank, number>> = {};
   for (const card of cards) {
     if (isStone(card)) continue;
-    counts[card.rank] = (counts[card.rank] || 0) + 1;
+    counts[card.rank] = (counts[card.rank] ?? 0) + 1;
   }
   return counts;
 }
@@ -90,10 +84,10 @@ function countSuits(cards: Card[]): Partial<Record<Suit, number>> {
     if (card.enhancement === CardEnhancement.Wild) {
       // Wild cards count for ALL suits
       for (const suit of [Suit.Spades, Suit.Hearts, Suit.Clubs, Suit.Diamonds]) {
-        counts[suit] = (counts[suit] || 0) + 1;
+        counts[suit] = (counts[suit] ?? 0) + 1;
       }
     } else {
-      counts[card.suit] = (counts[card.suit] || 0) + 1;
+      counts[card.suit] = (counts[card.suit] ?? 0) + 1;
     }
   }
   return counts;
@@ -104,12 +98,11 @@ function countSuits(cards: Card[]): Partial<Record<Suit, number>> {
 function checkFlush(
   scoringCards: Card[],
   totalCards: number,
-  stoneCount: number,
+  _stoneCount: number,
   modifiers?: JokerModifiers
 ): boolean {
   const minCards = modifiers?.fourFingers ? 4 : 5;
   if (totalCards < minCards) return false;
-  if (stoneCount >= minCards) return true;
 
   if (modifiers?.smeared) {
     // Hearts/Diamonds → red group, Spades/Clubs → black group
@@ -125,12 +118,12 @@ function checkFlush(
         blackCount++;
       }
     }
-    return (redCount + stoneCount >= minCards) || (blackCount + stoneCount >= minCards);
+    return redCount >= minCards || blackCount >= minCards;
   }
 
   const suitCounts = countSuits(scoringCards);
   for (const suit of [Suit.Spades, Suit.Hearts, Suit.Clubs, Suit.Diamonds]) {
-    if ((suitCounts[suit] || 0) + stoneCount >= minCards) return true;
+    if ((suitCounts[suit] || 0) >= minCards) return true;
   }
   return false;
 }
@@ -139,18 +132,18 @@ function checkFlush(
 
 function checkStraight(
   scoringCards: Card[],
-  stoneCount: number,
+  _stoneCount: number,
   modifiers?: JokerModifiers
 ): 'royal' | 'normal' | null {
   const minCards = modifiers?.fourFingers ? 4 : 5;
   const maxGap = modifiers?.shortcut ? 2 : 1;
 
-  if (scoringCards.length === 0 && stoneCount >= minCards) return null;
+  if (scoringCards.length === 0) return null;
 
   // Get unique ranks sorted in order
   const ranks = [...new Set(scoringCards.map(c => c.rank))];
   const ordered = ranks.map(r => RANK_ORDER[r]).sort((a, b) => a - b);
-  if (ordered.length + stoneCount < minCards) return null;
+  if (ordered.length < minCards) return null;
 
   // Check for Ace-low straight (A-2-3-4-5, or with shortcut e.g. A-3-5-7)
   const hasAce = ranks.includes(Rank.Ace);
@@ -178,17 +171,15 @@ function checkStraight(
     }
   }
 
-  if (maxRun + stoneCount < minCards) return null;
+  if (maxRun < minCards) return null;
 
   const highEnd = maxRunEnd;
-  // With shortcut, royal detection is trickier — the run might end at 14 (Ace)
-  // but the run could have gaps. Check broadway coverage within the run.
-  if (highEnd >= 14 && maxRun >= minCards - (stoneCount > 0 ? 1 : 0)) {
+  if (highEnd >= 14 && maxRun >= minCards) {
     // Check specifically for broadway (10,J,Q,K,A) coverage
     const broadwayRanks = [10, 11, 12, 13, 14];
     const haveRanks = new Set(sortedUnique);
     const missingBroadway = broadwayRanks.filter(r => !haveRanks.has(r)).length;
-    if (missingBroadway <= stoneCount && haveRanks.has(14)) return 'royal';
+    if (missingBroadway === 0 && haveRanks.has(14)) return 'royal';
   }
 
   return 'normal';
