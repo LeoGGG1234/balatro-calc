@@ -14,6 +14,7 @@ import type { GameState, SearchResult } from './types';
 import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { analyzeDiscards } from './discard-analyzer';
+import { computeFogCardEV, type FogCardEVResult, type FogEVConfig } from './fog-ev';
 
 // ─── Message Types ──────────────────────────────────────────────
 
@@ -31,6 +32,15 @@ export interface WorkerDiscardRequest {
   state: GameState;
   searchConfig?: Partial<SearchConfig>;
   options?: ScoreOptions;
+}
+
+export interface WorkerFogEVRequest {
+  type: 'fog_ev';
+  id: number;
+  state: GameState;
+  searchConfig?: Partial<SearchConfig>;
+  scoreOptions?: ScoreOptions;
+  config?: Partial<FogEVConfig>;
 }
 
 export interface WorkerProgressMessage {
@@ -52,16 +62,23 @@ export interface WorkerDiscardResultMessage {
   result: ReturnType<typeof analyzeDiscards>;
 }
 
+export interface WorkerFogEVResultMessage {
+  type: 'fog_ev_result';
+  id: number;
+  result: FogCardEVResult | null;
+}
+
 export interface WorkerErrorMessage {
   type: 'error';
   id: number;
   message: string;
 }
 
-export type WorkerRequest = WorkerSearchRequest | WorkerDiscardRequest;
+export type WorkerRequest = WorkerSearchRequest | WorkerDiscardRequest | WorkerFogEVRequest;
 export type WorkerResponse =
   | WorkerResultMessage
   | WorkerDiscardResultMessage
+  | WorkerFogEVResultMessage
   | WorkerProgressMessage
   | WorkerErrorMessage;
 
@@ -100,6 +117,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const result = analyzeDiscards(msg.state, undefined, msg.searchConfig, msg.options);
         const response: WorkerDiscardResultMessage = {
           type: 'discard_result',
+          id: msg.id,
+          result,
+        };
+        self.postMessage(response);
+        break;
+      }
+
+      case 'fog_ev': {
+        const result = computeFogCardEV(
+          msg.state,
+          msg.searchConfig,
+          msg.scoreOptions,
+          msg.config,
+        );
+        const response: WorkerFogEVResultMessage = {
+          type: 'fog_ev_result',
           id: msg.id,
           result,
         };

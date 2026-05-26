@@ -9,7 +9,7 @@
 import type {
   Card, GameState, DeckComposition,
 } from './types';
-import { HandType, isFogCard, ALL_RANKS, ALL_SUITS, ALL_HAND_TYPES } from './types';
+import { HandType, isFogCard, ALL_RANKS, ALL_SUITS, ALL_HAND_TYPES, CardEnhancement, CardEdition, Seal } from './types';
 import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 
@@ -153,7 +153,6 @@ function buildAvailableCardPool(deck: DeckComposition): Card[] {
   let idCounter = 0;
 
   if (deck.cards && deck.cards.length > 0) {
-    // Use the explicit card list
     for (const slot of deck.cards) {
       pool.push({
         id: `pool_${idCounter++}`,
@@ -168,30 +167,100 @@ function buildAvailableCardPool(deck: DeckComposition): Card[] {
     return pool;
   }
 
-  // Fallback: build pool from aggregate counts
+  // Fallback: build pool from aggregate counts with proportional modifier distribution
   const remainingByRank = deck.remainingByRank;
   const remainingBySuit = deck.remainingBySuit;
+  const enhCounts = deck.enhancementCounts;
+  const edCounts = deck.editionCounts;
+  const sealCounts = deck.sealCounts;
 
   for (const rank of ALL_RANKS) {
     for (const suit of ALL_SUITS) {
       const rankCount = remainingByRank[rank] ?? 0;
       const suitCount = remainingBySuit[suit] ?? 0;
-      // Conservative: include if both rank and suit have remaining cards
       if (rankCount > 0 && suitCount > 0) {
         pool.push({
           id: `pool_${idCounter++}`,
           rank,
           suit,
-          enhancement: 'none' as Card['enhancement'],
-          edition: 'none' as Card['edition'],
-          seal: 'none' as Card['seal'],
+          enhancement: CardEnhancement.None,
+          edition: CardEdition.None,
+          seal: Seal.None,
           debuffed: false,
         });
       }
     }
   }
 
+  // Distribute modifiers proportionally from aggregate counts
+  if (pool.length > 0) {
+    poolModifiers(pool, enhCounts, edCounts, sealCounts);
+  }
+
   return pool;
+}
+
+/**
+ * Assign enhancement/edition/seal modifiers to pool cards proportionally,
+ * so held-in-hand jokers like Baron/Mime see accurate modifier distributions.
+ * Rounds counts down to fit pool size without over-assignment.
+ */
+function poolModifiers(
+  pool: Card[],
+  enhCounts?: Partial<Record<string, number>>,
+  edCounts?: Partial<Record<string, number>>,
+  sealCounts?: Partial<Record<string, number>>,
+): void {
+  const n = pool.length;
+
+  // Sort cards randomly so modifier assignment isn't positional
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  let cursor = 0;
+
+  // Assign enhancements (excluding 'none')
+  if (enhCounts) {
+    for (const [enhStr, count] of Object.entries(enhCounts)) {
+      const enh = enhStr as CardEnhancement;
+      if (enh === CardEnhancement.None || count == null) continue;
+      const assigned = Math.min(Math.round(count), n);
+      for (let i = 0; i < assigned && cursor < n; i++) {
+        pool[cursor]!.enhancement = enh;
+        cursor++;
+      }
+    }
+  }
+
+  cursor = 0;
+  // Assign editions (excluding 'none')
+  if (edCounts) {
+    for (const [edStr, count] of Object.entries(edCounts)) {
+      const ed = edStr as CardEdition;
+      if (ed === CardEdition.None || count == null) continue;
+      const assigned = Math.min(Math.round(count), n);
+      for (let i = 0; i < assigned && cursor < n; i++) {
+        pool[cursor]!.edition = ed;
+        cursor++;
+      }
+    }
+  }
+
+  cursor = 0;
+  // Assign seals (excluding 'none')
+  if (sealCounts) {
+    for (const [sealStr, count] of Object.entries(sealCounts)) {
+      const s = sealStr as Seal;
+      if (s === Seal.None || count == null) continue;
+      const assigned = Math.min(Math.round(count), n);
+      for (let i = 0; i < assigned && cursor < n; i++) {
+        pool[cursor]!.seal = s;
+        cursor++;
+      }
+    }
+  }
 }
 
 function enumerateDraws(pool: Card[], count: number): Card[][] {

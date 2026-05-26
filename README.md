@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-19.2-61dafb)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.0-646cff)](https://vite.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.1-6e9f2a)](https://vitest.dev/)
-[![Tests](https://img.shields.io/badge/Tests-316%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-502%20passed-brightgreen)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow)]()
 
 ---
@@ -147,7 +147,12 @@ balatro-calc/
 │   │   ├── boss-data.ts                #    28 boss blind definitions + BossEffect interface
 │   │   ├── discard-analyzer.ts         # ★ Discard subset enumeration + post-draw EV estimation
 │   │   ├── run-simulator.ts            # ★ Multi-ante state machine: blinds → search → shop → repeat
-│   │   ├── search-worker.ts            #    Web Worker: discard analysis off the main thread
+│   │   ├── fog-ev.ts                    #    Fog-card expected value engine (combinatorial enumeration + Monte Carlo)
+│   │   ├── card-parser.ts              #    Short notation parser (e.g. "ah 10s kd.g.r 3*jh")
+│   │   ├── save-decoder.ts             # ★ v1.2: Zero-dependency deflate decompressor (DecompressionStream)
+│   │   ├── lua-parser.ts               # ★ v1.2: Lua table → JSON recursive descent parser
+│   │   ├── save-parser.ts              # ★ Balatro .jkr save file → InjectedSaveData orchestrator
+│   │   ├── search-worker.ts            #    Web Worker: fog EV + discard analysis off the main thread
 │   │   ├── search-client.ts            #    Singleton worker manager with Promise-based API
 │   │   └── index.ts                     #    Public API barrel export
 │   │
@@ -155,6 +160,7 @@ balatro-calc/
 │   │   ├── input/
 │   │   │   ├── GameStateForm.tsx        #    Main input form: hand, jokers, hand levels, round, deck
 │   │   │   ├── HandCardsInput.tsx       #    8-card hand editor with CardComponent + CardEditor
+│   │   │   ├── CardNotationInput.tsx    #    Text notation parser with cheat sheet
 │   │   │   ├── CardEditor.tsx           #    Per-card rank/suit/enhancement/edition/seal dropdowns
 │   │   │   ├── JokerInput.tsx           #    Joker search (debounced fuzzy), reorder, state overrides
 │   │   │   └── HandLevelInput.tsx       #    13 hand-type level grid with auto chips×mult display
@@ -191,10 +197,11 @@ balatro-calc/
 │   ├── App.tsx                          # 5-tab layout: Input / Discard / Results / Shop / Run Sim
 │   └── main.tsx                         # React 18 createRoot entry
 │
-├── tests/                               # Vitest test suite — 15 files, 316 tests
-│   ├── edge-cases.test.ts               #    15-dimension stress matrix (2,248 lines)
+├── tests/                               # Vitest test suite — 18 files, 502 tests
+│   ├── edge-cases.test.ts               #    15-dimension stress matrix
+│   ├── save-decoder.test.ts             #    Save decoder + Lua parser pipeline (44 tests)
 │   ├── helpers.ts                       #    card() factory + defaultState() builder
-│   └── ... (13 more test files)         #    Joker tests, scoring tests, search tests, economy tests, etc.
+│   └── ... (15 more test files)         #    Joker tests, scoring tests, search tests, economy tests, etc.
 │
 ├── .github/workflows/
 │   └── build-macos.yml                  # Auto-build macOS DMG on push to main (Intel + Apple Silicon)
@@ -303,19 +310,21 @@ Push to `main` — the GitHub Actions workflow in `.github/workflows/build-macos
 npx vitest run
 ```
 
-All **316 tests** pass across 15 test files. The test suite covers:
+All **502 tests** pass across 18 test files. The test suite covers:
 
 | Area | Tests | Highlights |
 |------|-------|------------|
-| Joker scoring | ~90 | All 98 non-stub jokers, state override correctness, category classification |
+| Joker scoring | ~120 | All 98 non-stub jokers, state override correctness, category classification |
 | Hand evaluation | ~30 | All 13 hand types, modifier jokers (Smeared, Four Fingers, Shortcut), Stone cards |
 | Scoring pipeline | ~40 | Boss enforcement, edition/edition stacking, retrigger combinatorics, Blueprint/Brainstorm chains |
-| Edge cases | ~60 | 15-dimension stress matrix: DNA deck inflation, state rollback isolation, The Hook RNG determinism, The Flint + Plasma timing, Midas + Vampire ordering, and more |
+| Edge cases & regression | ~65 | Worker lifecycle, UUID idempotency, state injection sync, 15-dimension stress matrix |
 | Search & ordering | ~25 | Smart ordering correctness, combination generation, permutation enumeration |
 | Economy | ~20 | Interest caps, 9 joker income formulas, deck-state-dependent counting |
 | Run simulator | ~25 | Boss handling, shop purchasing, ante progression, seed determinism |
 | Discard analysis | ~10 | Discard enumeration, post-draw estimation, quick discard tips |
 | Deck operations | ~16 | addCardToDeck, removeCardToDeck, batchUpdateDeckCards, preset application, aggregate consistency |
+| Parser & notation | ~55 | Card notation parser, save file decompressor + Lua parser (golden master stub) |
+| Component rendering | ~34 | UI component rendering, i18n coverage |
 
 Watch mode for development:
 
@@ -504,7 +513,12 @@ balatro-calc/
 │   │   ├── boss-data.ts                #    28 个 Boss 盲注定义 + BossEffect 接口
 │   │   ├── discard-analyzer.ts         # ★ 弃牌枚举 + 补牌后 EV 估算
 │   │   ├── run-simulator.ts            # ★ 多 ante 状态机：盲注 → 搜索 → 商店 → 循环
-│   │   ├── search-worker.ts            #    Web Worker：弃牌分析离线运行
+│   │   ├── fog-ev.ts                    #    迷雾牌期望值引擎（组合枚举 + 蒙特卡洛采样）
+│   │   ├── card-parser.ts              #    快捷短码解析器（例："ah 10s kd.g.r 3*jh"）
+│   │   ├── save-decoder.ts             # ★ v1.2: 零依赖 deflate 解压缩（DecompressionStream）
+│   │   ├── lua-parser.ts               # ★ v1.2: Lua 表 → JSON 递归下降解析器
+│   │   ├── save-parser.ts              # ★ Balatro .jkr 存档 → InjectedSaveData 编排器
+│   │   ├── search-worker.ts            #    Web Worker：迷雾 EV + 弃牌分析离线运行
 │   │   ├── search-client.ts            #    单例 Worker 管理器 + Promise API
 │   │   └── index.ts                     #    公共 API 导出
 │   │
@@ -525,7 +539,7 @@ balatro-calc/
 │   └── i18n/                            # 轻量 React Context 国际化
 │       └── locales/{en,zh-CN}.ts        #    英文/简体中文，150+ 小丑名全本地化
 │
-└── tests/                               # Vitest 测试套件 — 15 文件 / 316 用例
+└── tests/                               # Vitest 测试套件 — 18 文件 / 502 用例
 ```
 
 ---
@@ -539,7 +553,7 @@ npm install
 # 启动开发服务器 (localhost:5173, HMR)
 npm run dev
 
-# 运行全部 316 个单元测试
+# 运行全部 502 个单元测试
 npx vitest run
 
 # 监听模式

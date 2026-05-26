@@ -23,3 +23,8 @@ export { computeFogCardEV } from './fog-ev';
 export type { FogCardEVResult, FogEVConfig } from './fog-ev';
 export { createRng, hashSeedString } from './rng';
 export type { RngFn } from './rng';
+export { parseBalatroSave, SaveParseError, LuaParser } from './save-parser';
+export type { InjectedSaveData } from './save-parser';
+export { decompressBalatroSave, SaveDecodeError } from './save-decoder';
+export { parseLuaTableToJSON, LuaParseError } from './lua-parser';
+export { LuaParser as LuaParserClass } from './lua-parser';

@@ -183,6 +183,18 @@ export interface Translations {
     };
   };
 
+  // Save import
+  saveImport: {
+    title: string;
+    dropzone: string;
+    parsing: string;
+    success: string;
+    failFormat: string;
+    failDecompress: string;
+    failParse: string;
+    synced: string;
+  };
+
   // Discard
   discard: {
     title: string;

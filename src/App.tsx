@@ -116,6 +116,7 @@ function App() {
             effectiveHandSize={gameState.effectiveHandSize}
             onUpdateCard={gameState.setHandCard}
             onParseNotation={gameState.setHandCards}
+            onInjectSave={gameState.injectSaveState}
             onAddJoker={gameState.addJoker}
             onRemoveJoker={gameState.removeJoker}
             onReorderJokers={gameState.reorderJokers}

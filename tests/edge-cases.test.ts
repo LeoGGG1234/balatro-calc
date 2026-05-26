@@ -2256,6 +2256,8 @@ import {
   type GameStateForm as GSForm,
 } from '../src/hooks/useGameState';
 import { isFogCard } from '../src/engine/types';
+import { getSearchClient, SearchClient } from '../src/engine/search-client';
+import type { InjectedSaveData } from '../src/engine/save-parser';
 import { computeFogCardEV } from '../src/engine/fog-ev';
 
 describe('Edge Case #16: Apply Discard Suggestion — dual-universe state evolution', () => {
@@ -2655,6 +2657,260 @@ describe('Edge Case #16: Apply Discard Suggestion — dual-universe state evolut
 
       expect(isFogCard(realCard)).toBe(false);
       expect(isFogCard(fogCard)).toBe(true);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Test 17 — SearchClient Lifecycle & Fog Card Idempotency
+//  (Architecture hardening regression: issues #2, #3, #4b)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Edge Case #17: SearchClient lifecycle & fog card idempotency', () => {
+  // ── Helpers ──────────────────────────────────────────────────
+
+  function mkFormForInject(overrides: Partial<GSForm> = {}): GSForm {
+    const handCards = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.King, Suit.Hearts),
+      card(Rank.Queen, Suit.Diamonds),
+      card(Rank.Jack, Suit.Clubs),
+      card(Rank.Ten, Suit.Spades),
+      card(Rank.Nine, Suit.Hearts),
+      card(Rank.Eight, Suit.Diamonds),
+      card(Rank.Seven, Suit.Clubs),
+    ];
+    const defaultLevels = {} as Record<HandType, number>;
+    for (const ht of Object.values(HandType)) {
+      defaultLevels[ht] = 1;
+    }
+    return {
+      handCards,
+      jokers: [],
+      handLevels: defaultLevels,
+      blindType: BlindType.Small,
+      blindChips: 300,
+      blindDebuffedRanks: [],
+      blindDebuffedSuits: [],
+      antes: 1,
+      handsPlayed: 0,
+      discardsUsed: 0,
+      isFinalHand: false,
+      deckComposition: createStandardDeck(),
+      dollars: 0,
+      maxHandsBase: 4,
+      maxDiscardsBase: 3,
+      handSizeBase: 8,
+      activeVouchers: [],
+      activeBossEffect: null,
+      seed: null,
+      jokerStateOverrides: {},
+      ...overrides,
+    };
+  }
+
+  // ── Sub-Test A: SearchClient singleton lifecycle ──────────────
+
+  describe('SearchClient singleton lifecycle', () => {
+    it('getSearchClient returns the same instance on repeated calls', () => {
+      const a = getSearchClient();
+      const b = getSearchClient();
+      expect(a).toBe(b);
+    });
+
+    it('terminate() resets singleton; next getSearchClient returns fresh instance', () => {
+      const client1 = getSearchClient();
+      client1.terminate();
+
+      const client2 = getSearchClient();
+      expect(client2).not.toBe(client1);
+      expect(client2).toBeInstanceOf(SearchClient);
+    });
+
+    it('multiple terminate/restart cycles each produce a clean instance', () => {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const c = getSearchClient();
+        expect(c).toBeInstanceOf(SearchClient);
+        c.terminate();
+      }
+      // After all cycles, singleton should still produce a valid client
+      const final = getSearchClient();
+      expect(final).toBeInstanceOf(SearchClient);
+      final.terminate();
+    });
+  });
+
+  // ── Sub-Test B: Fog card ID idempotency (crypto.randomUUID) ───
+
+  describe('Fog card ID idempotency', () => {
+    it('fog card IDs use UUID format (not global counter)', () => {
+      const form = mkFormForInject();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1],
+      });
+
+      // Fog cards should have IDs like "fog_<8 hex chars>"
+      expect(next.handCards[0].fog).toBe(true);
+      expect(next.handCards[0].id).toMatch(/^fog_[0-9a-f]{8}$/);
+      expect(next.handCards[1].id).toMatch(/^fog_[0-9a-f]{8}$/);
+    });
+
+    it('fog cards within a single discard action have unique IDs', () => {
+      const form = mkFormForInject();
+      const next = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0, 1, 2],
+      });
+
+      expect(next.handCards[0].id).not.toBe(next.handCards[1].id);
+      expect(next.handCards[1].id).not.toBe(next.handCards[2].id);
+      expect(next.handCards[0].id).not.toBe(next.handCards[2].id);
+    });
+
+    it('fog card IDs are non-deterministic across separate discard actions', () => {
+      const form = mkFormForInject();
+      const next1 = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0],
+      });
+      const next2 = formReducer(form, {
+        type: 'APPLY_DISCARD_SUGGESTION',
+        discardIndices: [0],
+      });
+
+      // Two independent discard actions produce different fog IDs
+      // (no global counter making them sequential or predictable)
+      expect(next1.handCards[0].id).not.toBe(next2.handCards[0].id);
+    });
+  });
+
+  // ── Sub-Test C: INJECT_SAVE_STATE syncs global environment ────
+
+  describe('INJECT_SAVE_STATE global environment sync', () => {
+    it('syncs activeVouchers and activeBossEffect when present in injected data', () => {
+      const form = mkFormForInject();
+      const injected: InjectedSaveData = {
+        handCards: form.handCards,
+        jokers: [],
+        handLevels: form.handLevels,
+        deckComposition: createStandardDeck(),
+        dollars: 100,
+        antes: 3,
+        handsPlayed: 1,
+        discardsUsed: 2,
+        blindType: BlindType.Boss,
+        blindChips: 10000,
+        blindDebuffedRanks: [],
+        blindDebuffedSuits: [],
+        seed: 'injected_seed',
+        jokerStateOverrides: {},
+        activeVouchers: ['grabber', 'wasteful'],
+        activeBossEffect: 'the_arm',
+        maxHandsBase: 5,
+        maxDiscardsBase: 4,
+        handSizeBase: 9,
+      };
+
+      const next = formReducer(form, { type: 'INJECT_SAVE_STATE', data: injected });
+
+      expect(next.activeVouchers).toEqual(['grabber', 'wasteful']);
+      expect(next.activeBossEffect).toBe('the_arm');
+      expect(next.maxHandsBase).toBe(5);
+      expect(next.maxDiscardsBase).toBe(4);
+      expect(next.handSizeBase).toBe(9);
+    });
+
+    it('preserves existing values when injected data omits optional fields', () => {
+      const form = mkFormForInject({
+        activeVouchers: ['palette'],
+        activeBossEffect: 'the_water',
+        maxHandsBase: 6,
+        maxDiscardsBase: 5,
+        handSizeBase: 10,
+      });
+
+      const injected: InjectedSaveData = {
+        handCards: form.handCards,
+        jokers: [],
+        handLevels: form.handLevels,
+        deckComposition: createStandardDeck(),
+        dollars: 50,
+        antes: 2,
+        handsPlayed: 0,
+        discardsUsed: 0,
+        blindType: BlindType.Small,
+        blindChips: 600,
+        blindDebuffedRanks: [],
+        blindDebuffedSuits: [],
+        seed: null,
+        jokerStateOverrides: {},
+        // No activeVouchers, activeBossEffect, maxHandsBase, etc.
+      };
+
+      const next = formReducer(form, { type: 'INJECT_SAVE_STATE', data: injected });
+
+      // Existing values should be preserved when not provided
+      expect(next.activeVouchers).toEqual(['palette']);
+      expect(next.activeBossEffect).toBe('the_water');
+      expect(next.maxHandsBase).toBe(6);
+      expect(next.maxDiscardsBase).toBe(5);
+      expect(next.handSizeBase).toBe(10);
+    });
+
+    it('injected data fields are fully synced (deck cards, jokers, etc.)', () => {
+      const form = mkFormForInject();
+      const customDeck = createStandardDeck();
+      const handCards = [
+        card(Rank.Ace, Suit.Hearts, CardEnhancement.Glass, CardEdition.Polychrome, Seal.Red),
+      ];
+
+      const injected: InjectedSaveData = {
+        handCards,
+        jokers: [{ id: 'joker', edition: CardEdition.Foil }],
+        handLevels: { ...form.handLevels, [HandType.Flush]: 5 },
+        deckComposition: customDeck,
+        dollars: 250,
+        antes: 8,
+        handsPlayed: 3,
+        discardsUsed: 1,
+        blindType: BlindType.Boss,
+        blindChips: 100000,
+        blindDebuffedRanks: [Rank.King],
+        blindDebuffedSuits: [Suit.Hearts],
+        seed: 'synced_seed',
+        jokerStateOverrides: { 0: 42 },
+        activeVouchers: ['grabber', 'paint_brush'],
+        activeBossEffect: 'violet_vessel',
+        maxHandsBase: 5,
+        maxDiscardsBase: 4,
+        handSizeBase: 9,
+      };
+
+      const next = formReducer(form, { type: 'INJECT_SAVE_STATE', data: injected });
+
+      // Core fields synced
+      expect(next.handCards).toEqual(handCards);
+      expect(next.jokers).toEqual([{ id: 'joker', edition: CardEdition.Foil }]);
+      expect(next.handLevels[HandType.Flush]).toBe(5);
+      expect(next.dollars).toBe(250);
+      expect(next.antes).toBe(8);
+      expect(next.handsPlayed).toBe(3);
+      expect(next.discardsUsed).toBe(1);
+      expect(next.blindType).toBe(BlindType.Boss);
+      expect(next.blindChips).toBe(100000);
+      expect(next.blindDebuffedRanks).toEqual([Rank.King]);
+      expect(next.blindDebuffedSuits).toEqual([Suit.Hearts]);
+      expect(next.seed).toBe('synced_seed');
+      expect(next.jokerStateOverrides[0]).toBe(42);
+      // New global environment fields synced
+      expect(next.activeVouchers).toEqual(['grabber', 'paint_brush']);
+      expect(next.activeBossEffect).toBe('violet_vessel');
+      expect(next.maxHandsBase).toBe(5);
+      expect(next.maxDiscardsBase).toBe(4);
+      expect(next.handSizeBase).toBe(9);
+      // isFinalHand always reset on injection
+      expect(next.isFinalHand).toBe(false);
     });
   });
 });

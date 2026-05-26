@@ -1,23 +1,26 @@
 /**
  * Main-thread client for the search Web Worker.
  *
- * Provides a Promise-based API for running search and discard analysis
- * in a background thread.
+ * Provides a Promise-based API for running search, discard analysis,
+ * and fog-card EV computation in a background thread.
  */
 
 import type { GameState, SearchResult } from './types';
 import type { SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import type { DiscardResult } from './discard-analyzer';
+import type { FogCardEVResult, FogEVConfig } from './fog-ev';
 import type {
-  WorkerSearchRequest, WorkerDiscardRequest,
-  WorkerResultMessage, WorkerDiscardResultMessage,
+  WorkerSearchRequest, WorkerDiscardRequest, WorkerFogEVRequest,
+  WorkerResultMessage, WorkerDiscardResultMessage, WorkerFogEVResultMessage,
   WorkerErrorMessage, WorkerResponse,
 } from './search-worker';
 
 // ─── Client Class ───────────────────────────────────────────────
 
 type Resolver<T> = (value: T) => void;
+
+const TERMINATED_ERROR = 'Worker terminated actively';
 
 export class SearchClient {
   private worker: Worker | null = null;
@@ -37,7 +40,6 @@ export class SearchClient {
       };
       this.worker.onerror = (err) => {
         console.error('Search worker error:', err);
-        // Reject all pending promises
         for (const [id, resolve] of this.pending) {
           (resolve as Resolver<{ error: string }>)({ error: err.message });
           this.pending.delete(id);
@@ -54,8 +56,9 @@ export class SearchClient {
     switch (msg.type) {
       case 'result':
       case 'discard_result':
+      case 'fog_ev_result':
         this.pending.delete(msg.id);
-        (resolve as Resolver<WorkerResultMessage | WorkerDiscardResultMessage>)(msg);
+        (resolve as Resolver<WorkerResultMessage | WorkerDiscardResultMessage | WorkerFogEVResultMessage>)(msg);
         break;
       case 'error':
         this.pending.delete(msg.id);
@@ -124,13 +127,54 @@ export class SearchClient {
   }
 
   /**
-   * Terminate the worker. The client is unusable after this.
+   * Run fog-card EV computation in a worker thread.
+   */
+  computeFogEV(
+    state: GameState,
+    searchConfig?: Partial<SearchConfig>,
+    scoreOptions?: ScoreOptions,
+    config?: Partial<FogEVConfig>,
+  ): Promise<{ result?: FogCardEVResult | null; error?: string }> {
+    return new Promise(resolve => {
+      const id = this.nextId++;
+      this.pending.set(id, resolve as Resolver<unknown>);
+
+      const msg: WorkerFogEVRequest = {
+        type: 'fog_ev',
+        id,
+        state,
+        searchConfig,
+        scoreOptions,
+        config,
+      };
+
+      this.getWorker().postMessage(msg);
+    }).then((raw) => {
+      const m = raw as WorkerFogEVResultMessage | WorkerErrorMessage;
+      if ('result' in m) return { result: m.result };
+      return { error: (m as WorkerErrorMessage).message };
+    });
+  }
+
+  /**
+   * Terminate the worker. Rejects all pending promises with a clear
+   * termination error, then resets the singleton so the next
+   * getSearchClient() call creates a fresh, healthy instance.
    */
   terminate(): void {
     if (this.worker) {
+      // Reject all pending promises
+      for (const [id, resolve] of this.pending) {
+        (resolve as Resolver<{ error: string }>)({ error: TERMINATED_ERROR });
+        this.pending.delete(id);
+      }
+      this.pending.clear();
       this.worker.terminate();
       this.worker = null;
-      this.pending.clear();
+    }
+    // Reset singleton so next getSearchClient() gets a fresh client
+    if (defaultClient === this) {
+      defaultClient = null;
     }
   }
 }
@@ -145,4 +189,3 @@ export function getSearchClient(): SearchClient {
   }
   return defaultClient;
 }
-

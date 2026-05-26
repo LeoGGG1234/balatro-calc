@@ -9,9 +9,10 @@ import {
 } from '../engine/types';
 import { getDefaultHandLevels } from '../engine/constants';
 import { getJokerRoundModifiers, getJokerModifiers } from '../engine/joker-data';
-import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, batchUpdateDeckCards, applyDeckPreset } from '../engine/deck';
+import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, batchUpdateDeckCards, applyDeckPreset, buildAggregateFromCards } from '../engine/deck';
 import type { DeckCardSlot, DeckCardFilter } from '../engine/types';
 import type { DeckPreset } from '../engine/deck';
+import type { InjectedSaveData } from '../engine/save-parser';
 import { createRng } from '../engine/rng';
 import { drawHand } from '../engine/run-simulator';
 import { recognizeHand } from '../engine/hand-evaluator';
@@ -182,6 +183,7 @@ export type FormAction =
   | { type: 'SET_SEED'; seed: string | null }
   | { type: 'SET_JOKER_STATE_OVERRIDE'; index: number; value: number }
   | { type: 'APPLY_DISCARD_SUGGESTION'; discardIndices: number[] }
+  | { type: 'INJECT_SAVE_STATE'; data: InjectedSaveData }
   | { type: 'RESET_FORM' };
 
 // ─── Initial State ─────────────────────────────────────────────
@@ -225,11 +227,9 @@ function createInitialState(): GameStateForm {
 
 // ─── Fog Card Factory ──────────────────────────────────────────
 
-let _fogIdCounter = 0;
-
 function createFogCard(): Card {
   return {
-    id: `fog_${_fogIdCounter++}`,
+    id: `fog_${crypto.randomUUID().slice(0, 8)}`,
     rank: Rank.Two,
     suit: Suit.Spades,
     enhancement: CardEnhancement.None,
@@ -542,6 +542,47 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
       };
     }
 
+    case 'INJECT_SAVE_STATE': {
+      const d = action.data;
+
+      // Build fresh deck composition with aggregate counts
+      const deckCards = d.deckComposition.cards;
+      const freshDeck: DeckComposition = deckCards
+        ? { ...buildAggregateFromCards(deckCards), cards: deckCards }
+        : d.deckComposition;
+
+      // Sync global environment fields when present in injected data
+      const nextVouchers = d.activeVouchers ?? state.activeVouchers;
+      const nextBossEffect = d.activeBossEffect !== undefined ? d.activeBossEffect : state.activeBossEffect;
+      const nextMaxHandsBase = d.maxHandsBase ?? state.maxHandsBase;
+      const nextMaxDiscardsBase = d.maxDiscardsBase ?? state.maxDiscardsBase;
+      const nextHandSizeBase = d.handSizeBase ?? state.handSizeBase;
+
+      return {
+        ...state,
+        handCards: d.handCards,
+        jokers: d.jokers,
+        handLevels: d.handLevels,
+        deckComposition: freshDeck,
+        dollars: d.dollars,
+        antes: d.antes,
+        handsPlayed: d.handsPlayed,
+        discardsUsed: d.discardsUsed,
+        blindType: d.blindType,
+        blindChips: d.blindChips,
+        blindDebuffedRanks: d.blindDebuffedRanks,
+        blindDebuffedSuits: d.blindDebuffedSuits,
+        seed: d.seed,
+        jokerStateOverrides: d.jokerStateOverrides,
+        isFinalHand: false,
+        activeVouchers: nextVouchers,
+        activeBossEffect: nextBossEffect,
+        maxHandsBase: nextMaxHandsBase,
+        maxDiscardsBase: nextMaxDiscardsBase,
+        handSizeBase: nextHandSizeBase,
+      };
+    }
+
     case 'RESET_FORM':
       return createInitialState();
 
@@ -705,6 +746,10 @@ export function useGameState() {
     dispatch({ type: 'APPLY_DISCARD_SUGGESTION', discardIndices });
   }, []);
 
+  const injectSaveState = useCallback((data: InjectedSaveData) => {
+    dispatch({ type: 'INJECT_SAVE_STATE', data });
+  }, []);
+
   const reset = useCallback(() => {
     dispatch({ type: 'RESET_FORM' });
   }, []);
@@ -736,6 +781,7 @@ export function useGameState() {
     setSeed,
     setJokerStateOverride,
     applyDiscardSuggestion,
+    injectSaveState,
     reset,
     buildState,
   };

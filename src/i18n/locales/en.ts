@@ -442,6 +442,17 @@ const en: Translations = {
     applyDisabled: 'No discards remaining or boss prevents discarding',
   },
 
+  saveImport: {
+    title: 'Quick Sync from Save',
+    dropzone: 'Drag & drop save.jkr here, or click to browse',
+    parsing: 'Parsing save file...',
+    success: 'Save file parsed successfully',
+    failFormat: 'Invalid file format. Please drop a valid Balatro save.jkr file.',
+    failDecompress: 'Failed to decompress save file. The file may be corrupted.',
+    failParse: 'Failed to parse save data. The save may be from an unsupported game version.',
+    synced: 'Synced {cards} cards, {jokers} jokers, ante {ante}',
+  },
+
   runSim: {
     title: 'Run Simulator',
     config: {

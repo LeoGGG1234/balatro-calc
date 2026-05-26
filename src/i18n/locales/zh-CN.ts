@@ -442,6 +442,17 @@ const zhCN: Translations = {
     applyDisabled: '无剩余弃牌次数或Boss禁止弃牌',
   },
 
+  saveImport: {
+    title: '一键同步存档',
+    dropzone: '拖拽 save.jkr 到此处，或点击选择文件',
+    parsing: '正在解析存档...',
+    success: '存档解析成功',
+    failFormat: '文件格式无效，请拖入有效的 Balatro save.jkr 存档文件。',
+    failDecompress: '存档解压失败，文件可能已损坏。',
+    failParse: '存档数据解析失败，可能是游戏版本不兼容。',
+    synced: '已同步 {cards} 张牌、{jokers} 张小丑牌、底注 {ante}',
+  },
+
   runSim: {
     title: '对局模拟',
     config: {
