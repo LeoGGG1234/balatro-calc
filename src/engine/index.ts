@@ -15,3 +15,8 @@ export * from './deck';
 export * from './discard-analyzer';
 export { SearchClient, getSearchClient } from './search-client';
 export * from './run-simulator';
+export * from './boss-data';
+export * from './economy';
+export { combinations } from './combo-utils';
+export { createRng, hashSeedString } from './rng';
+export type { RngFn } from './rng';

@@ -164,6 +164,24 @@ export type HandLevels = Record<HandType, number>; // level per hand type, defau
 
 // ─── Deck ──────────────────────────────────────────────────────
 
+export interface DeckCardSlot {
+  rank: Rank;
+  suit: Suit;
+  enhancement: CardEnhancement;
+  edition: CardEdition;
+  seal: Seal;
+}
+
+export interface DeckCardFilter {
+  suit?: Suit;
+  rank?: Rank;
+  enhancement?: CardEnhancement;
+  edition?: CardEdition;
+  seal?: Seal;
+}
+
+export type DeckPreset = 'standard' | 'abandoned' | 'checkered';
+
 export interface DeckComposition {
   totalCards: number;      // cards remaining in deck (not hand, not played this round)
   remainingByRank: Partial<Record<Rank, number>>;
@@ -171,6 +189,7 @@ export interface DeckComposition {
   enhancementCounts?: Partial<Record<CardEnhancement, number>>;
   editionCounts?: Partial<Record<CardEdition, number>>;
   sealCounts?: Partial<Record<Seal, number>>;
+  cards?: DeckCardSlot[];
 }
 
 // ─── Blind ──────────────────────────────────────────────────────
@@ -292,9 +311,6 @@ export interface JokerModifiers {
   allCardsFace: boolean; // pareidolia — all cards count as face cards
 }
 
-/** @deprecated Use JokerModifiers instead */
-export type HandEvalModifiers = JokerModifiers;
-
 // ─── Utility ───────────────────────────────────────────────────
 
 export const FACE_RANKS: Rank[] = [Rank.Jack, Rank.Queen, Rank.King];
@@ -323,11 +339,11 @@ export const ALL_HAND_TYPES: HandType[] = [
 ];
 
 export function isFaceCard(rank: Rank): boolean {
-  return FACE_RANKS.includes(rank);
+  return rank === Rank.Jack || rank === Rank.Queen || rank === Rank.King;
 }
 
 export function isNumberCard(rank: Rank): boolean {
-  return NUMBER_RANKS.includes(rank) && rank !== Rank.Ace;
+  return rank !== Rank.Ace && !isFaceCard(rank);
 }
 
 export function rankToChips(rank: Rank): number {
