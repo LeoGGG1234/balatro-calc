@@ -8,10 +8,13 @@ import type { DeckPreset } from '../../engine/deck';
 import type { InjectedSaveData } from '../../engine/save-parser';
 import { parseBalatroSave, SaveParseError } from '../../engine/save-parser';
 import { ALL_VOUCHERS, ALL_BOSS_EFFECTS } from '../../hooks/useGameState';
+import { ALL_DECKS, ALL_STAKES } from '../../engine/deck-stake-data';
+import type { DeckId, StakeId } from '../../engine/deck-stake-data';
 import { HandCardsInput } from './HandCardsInput';
 import { JokerInput } from './JokerInput';
 import { HandLevelInput } from './HandLevelInput';
 import { DeckBuilder } from '../deck/DeckBuilder';
+import { RoundHUD } from './RoundHUD';
 
 interface GameStateFormProps {
   form: GSMForm;
@@ -28,6 +31,9 @@ interface GameStateFormProps {
   onToggleVoucher: (voucherId: string) => void;
   onSetBossEffect: (bossId: string | null) => void;
   onInjectSave?: (data: InjectedSaveData) => void;
+  onNewRound?: () => void;
+  onSelectDeck?: (deckId: DeckId | null) => void;
+  onSelectStake?: (stakeId: StakeId | null) => void;
   onCompute: () => void;
   computing: boolean;
   jokerStateOverrides: Record<number, number>;
@@ -48,7 +54,8 @@ export function GameStateForm({
   onUpdateCard, onParseNotation, onAddJoker, onRemoveJoker,
   onReorderJokers, onSetHandLevel, onUpdateField, onCompute,
   onToggleVoucher, onSetBossEffect,
-  onInjectSave, computing, jokerStateOverrides, onJokerStateChange,
+  onInjectSave, onNewRound, onSelectDeck, onSelectStake,
+  computing, jokerStateOverrides, onJokerStateChange,
   onSetDeckComposition, onResetDeckToStandard, onAddCardToDeck, onRemoveCardFromDeck,
   onApplyDeckPreset, onUpdateDeckCard, onBatchUpdateDeckCards,
 }: GameStateFormProps) {
@@ -141,6 +148,57 @@ export function GameStateForm({
           )}
         </section>
       )}
+
+      {/* Round HUD */}
+      <RoundHUD
+        handsRemaining={effectiveMaxHands - form.handsPlayed}
+        maxHands={effectiveMaxHands}
+        discardsRemaining={effectiveMaxDiscards - form.discardsUsed}
+        maxDiscards={effectiveMaxDiscards}
+        roundScore={form.roundScore}
+        blindChips={form.blindChips}
+        onNewRound={onNewRound}
+      />
+
+      {/* Deck & Stake Selectors */}
+      <div className="deck-stake-row">
+        <div className="deck-stake-field">
+          <label className="field-label">{t.deckSelect.label}</label>
+          <select
+            className="input deck-stake-select"
+            value={form.selectedDeck ?? ''}
+            onChange={e => onSelectDeck?.(e.target.value as DeckId || null)}
+          >
+            <option value="">-</option>
+            {ALL_DECKS.map(d => (
+              <option key={d.id} value={d.id}>{t.deckSelect.names[d.id] ?? d.id}</option>
+            ))}
+          </select>
+          {form.selectedDeck && (
+            <span className="deck-stake-hint">
+              {t.deckSelect.descriptions[form.selectedDeck] ?? ''}
+            </span>
+          )}
+        </div>
+        <div className="deck-stake-field">
+          <label className="field-label">{t.deckSelect.labelStake}</label>
+          <select
+            className="input deck-stake-select"
+            value={form.selectedStake ?? ''}
+            onChange={e => onSelectStake?.(e.target.value as StakeId || null)}
+          >
+            <option value="">-</option>
+            {ALL_STAKES.map(s => (
+              <option key={s.id} value={s.id}>{t.stake.names[s.id] ?? s.id}</option>
+            ))}
+          </select>
+          {form.selectedStake && (
+            <span className="deck-stake-hint">
+              {t.stake.descriptions[form.selectedStake] ?? ''}
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* Hand Cards Section */}
       <section className="section">

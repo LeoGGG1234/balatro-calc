@@ -23,7 +23,9 @@
 
 The engine answers this question through exhaustive combinatorial search over all card subsets × all meaningful joker orderings, evaluating each candidate through a faithful five-phase scoring pipeline that reproduces Balatro's exact evaluation order: card scoring → held-in-hand enhancements → held-in-hand jokers → joker evaluation (left-to-right) → final score. Every retrigger, every Blueprint copy chain, every boss debuff, every Steel card held in hand is accounted for.
 
-But the project goes beyond single-hand optimization. The **run simulator** plays through up to 8 antes (24 blinds), simulating every boss effect, every shop phase, and every draw from a dynamic deck — all driven by a deterministic Knuth LCG seeded for perfect reproducibility. The **discard analyzer** exhaustively enumerates discard subsets and estimates post-draw expected value using deck composition heuristics.
+But the project goes beyond single-hand optimization. The **run simulator** plays through up to 8 antes (24 blinds), simulating every boss effect, every shop phase, and every draw from a dynamic deck — all driven by a deterministic Knuth LCG seeded for perfect reproducibility. The **discard analyzer** exhaustively enumerates discard subsets and estimates post-draw expected value using deck composition heuristics. The **round session tracker** provides a persistent companion mode: apply discard suggestions, replace fog-card placeholders with actual drawn cards, play hands with cumulative score tracking, and auto-decrement counters.
+
+The **Steammodded mod** takes this further with a real-time bidirectional bridge: a Lua HTTP server running inside Balatro auto-syncs your live game state to the web tool, eliminating all manual data entry. Click "Compute" and the optimal cards are instantly highlighted in-game with green overlays — play them, and the tool auto-detects the new state, ready for the next decision. It turns Balatro Calc from a manual calculator into a seamless second-screen companion.
 
 **Key design principle:** every scoring function is **pure**. `scorePlay()` never mutates its `GameState` argument. Identical inputs always produce identical outputs. This property makes the engine auditable, testable, and composable — you can fork search branches, inject hypothetical joker states via `jokerStateOverrides`, and compare results with zero cross-contamination.
 
@@ -114,6 +116,73 @@ Runs in a Web Worker — UI stays responsive during analysis.
 
 Three-mode deck builder: Quick (count input) → List (card-by-card) → Visual (13 rows × 4 columns grid, per-cell enhancement/edition/seal indicators, batch filter-apply, 3 presets: Standard 52 / Abandoned 40 / Checkered 26).
 
+#### 11. Save File Import — Drag & Drop .jkr → Instant State Population
+
+Drag a Balatro `.jkr` save file onto the Input tab's drop zone. The engine decompresses the deflate stream, parses the Lua table, and auto-fills **every field**: hand cards, jokers (with state overrides), full deck composition (with enhancements/editions/seals), blinds, antes, dollars, vouchers, and boss effects. No manual data entry required — drop, click Compute, and see the optimal play for your actual game state.
+
+Pipeline: `DecompressionStream('deflate')` → recursive-descent Lua parser → domain mapper → `useReducer` injection. All three stages are pure TypeScript with zero dependencies.
+
+#### 12. Round Session Tracker — Persistent Companion Mode
+
+Turn the calculator into a real-time round companion alongside the game:
+
+- **One-time setup per round** — import save, configure deck & stake, then track the entire round without re-entering data
+- **Discard → Fog → Replace workflow** — Apply Discard Suggestions replace discarded cards with fog-card placeholders (dashed "?" cards); click each fog card to set the actual drawn card via CardEditor
+- **Play Hand → Accumulate Score** — After computing optimal play, click "Play This Hand" to auto-remove played cards (replaced with fog), decrement hands counter, and accumulate `roundScore`. Track every hand in `scoreLog`
+- **RoundHUD status bar** — Persistently visible: hands remaining (with progress bar), discards remaining (with progress bar), round score vs. blind target (with percentage). "New Round" button resets per-round counters while preserving jokers/deck/levels
+- **Discard joker auto-update** — Castle (+3 chips/discard), Green Joker (-1 mult/discard), Faceless (+5 mult/face discarded), Hit the Road (+0.5×/Jack discarded), Yorick all tracked automatically
+
+#### 13. Deck & Stake Selection — Instant Field Presets
+
+Two dropdowns at the top of the Input tab auto-fill round settings based on game selection:
+
+**15 Decks with full field mapping:**
+| Deck | Auto-Filled Fields |
+|------|--------------------|
+| Red | `maxDiscardsBase = 4` |
+| Blue | `maxHandsBase = 5` |
+| Yellow | `dollars = 14` |
+| Green | Descriptive hint (no interest, per-hand/per-discard earnings) |
+| Black | `maxHandsBase = 3`, `maxJokerSlots = 8` |
+| Magic / Nebula / Ghost / Zodiac | Pre-selects corresponding vouchers |
+| Abandoned / Checkered | Applies deck composition preset |
+| Painted | `handSizeBase = 10`, `maxJokerSlots = 6` |
+| Anaglyph | Pre-selects Blank voucher, `maxJokerSlots = 6` |
+| Plasma / Erratic | Descriptive hints (plasma scoring NYI, random deck) |
+
+**8 Stakes:**
+| Stake | Effect |
+|-------|--------|
+| White | Base difficulty |
+| Red / Green / Black / Purple / Orange / Gold | Descriptive mechanic hints |
+| **Blue** | `maxDiscardsBase -= 1` (auto-computed with deck base) |
+
+Deck + stake effects compose correctly (e.g., Blue Deck 3 discards + Blue Stake -1 = 2 discards). All changes happen through `computeDeckStakeBase()` — a single pure function that merges selected deck and stake into form defaults.
+
+#### 14. Steammodded Mod — Real-Time Bidirectional Bridge
+
+A Lua mod running inside Balatro that eliminates all manual data entry and closes the decision loop:
+
+- **Auto-Sync (Game → Tool)**: A non-blocking HTTP server (`localhost:18888`) exposes live game state — hand cards, jokers (with accumulated state), deck composition, blinds, antes, dollars, vouchers, boss effects. The web tool polls every 300ms with JSON delta detection to avoid unnecessary re-renders.
+- **Card Highlighting (Tool → Game)**: When you click "Compute", the optimal cards to play are instantly highlighted in-game with **green semi-transparent overlays**. Discard suggestions highlight in **red**. Highlights are drawn via `love.graphics` directly on the game's card sprites.
+- **Auto-Refresh**: After you play highlighted cards in-game, the mod detects the state change on the next poll cycle (~300ms), injects the new hand, and clears highlights — ready for the next compute cycle. No clicking, no manual entry.
+- **Zero Configuration**: Drop the `mod/balatro-calc/` folder into your Balatro Mods directory. The mod auto-starts with Steammodded, tries ports 18888–18893, and gracefully degrades if luasocket is unavailable.
+
+**Architecture:**
+```
+Balatro (Lua/Steammodded)          Web Tool (React/TypeScript)
+     │                                    │
+     │  HTTP Server :18888                │  useModConnection hook
+     │  ├─ GET /api/state    ──────────→  │  ├─ Poll every 300ms
+     │  ├─ GET /api/health   ──────────→  │  ├─ Delta detect (JSON compare)
+     │  └─ POST /api/command ←──────────  │  └─ sendCommand()
+     │                                    │
+     ▼                                    ▼
+  Green/Red card highlights         Auto-filled form state
+```
+
+**Requirements:** [Steammodded](https://github.com/Steamopollys/Steamodded) (includes luasocket), Balatro (official/vanilla). Open the web tool in any browser — the connection indicator turns green when the mod is detected.
+
 ---
 
 ### 🏗️ Architecture
@@ -152,13 +221,16 @@ balatro-calc/
 │   │   ├── save-decoder.ts             # ★ v1.2: Zero-dependency deflate decompressor (DecompressionStream)
 │   │   ├── lua-parser.ts               # ★ v1.2: Lua table → JSON recursive descent parser
 │   │   ├── save-parser.ts              # ★ Balatro .jkr save file → InjectedSaveData orchestrator
+│   │   ├── deck-stake-data.ts          # ★ 15 game decks + 8 stakes with auto field mapping
+│   │   ├── mod-protocol.ts              # ★ Shared types for mod↔tool bridge (ModStateResponse, ModCommand)
 │   │   ├── search-worker.ts            #    Web Worker: fog EV + discard analysis off the main thread
 │   │   ├── search-client.ts            #    Singleton worker manager with Promise-based API
 │   │   └── index.ts                     #    Public API barrel export
 │   │
 │   ├── components/                      # React 18 UI layer
 │   │   ├── input/
-│   │   │   ├── GameStateForm.tsx        #    Main input form: hand, jokers, hand levels, round, deck
+│   │   │   ├── GameStateForm.tsx        #    Main input form: deck/stake selectors, RoundHUD, hand, jokers, levels, round, deck
+│   │   │   ├── RoundHUD.tsx             #    Round status bar: hands/discards/score progress bars, new round button
 │   │   │   ├── HandCardsInput.tsx       #    8-card hand editor with CardComponent + CardEditor
 │   │   │   ├── CardNotationInput.tsx    #    Text notation parser with cheat sheet
 │   │   │   ├── CardEditor.tsx           #    Per-card rank/suit/enhancement/edition/seal dropdowns
@@ -182,10 +254,11 @@ balatro-calc/
 │   │       └── card-display.ts          #    Suit symbols, colors, all visual constants
 │   │
 │   ├── hooks/                           # React state management
-│   │   ├── useGameState.ts              #    21-action useReducer: hand, jokers, deck, round, vouchers, bosses
+│   │   ├── useGameState.ts              #    25-action useReducer: hand, jokers, deck, round, vouchers, bosses, play-hand, new-round, deck/stake selection
 │   │   ├── useSearch.ts                 #    Async search with Web Worker, progress tracking
 │   │   ├── useDiscardAnalysis.ts        #    Discard analysis with Web Worker delegation
-│   │   └── useRunSimulation.ts          #    Run simulator lifecycle (idle → running → done/error)
+│   │   ├── useRunSimulation.ts          #    Run simulator lifecycle (idle → running → done/error)
+│   │   └── useModConnection.ts          #    Mod bridge: HTTP polling, delta detection, command sending
 │   │
 │   ├── i18n/                            # Lightweight React Context i18n
 │   │   ├── context.tsx                  #    I18nProvider + useI18n() hook
@@ -202,6 +275,16 @@ balatro-calc/
 │   ├── save-decoder.test.ts             #    Save decoder + Lua parser pipeline (44 tests)
 │   ├── helpers.ts                       #    card() factory + defaultState() builder
 │   └── ... (15 more test files)         #    Joker tests, scoring tests, search tests, economy tests, etc.
+│
+├── mod/                                 # Steammodded Lua mod
+│   └── balatro-calc/
+│       ├── main.lua                      #    Entry point: hooks Game.update/draw, starts server
+│       ├── lib/json.lua                  #    Pure-Lua JSON encoder/decoder
+│       └── src/
+│           ├── server.lua                #    Non-blocking HTTP server (luasocket TCP, settimeout(0))
+│           ├── collector.lua             #    Reads G.hand/G.jokers/G.deck/G.GAME → JSON
+│           ├── highlighter.lua           #    Draws green (play) / red (discard) card overlays
+│           └── commands.lua              #    Dispatches POST /api/command payloads
 │
 ├── .github/workflows/
 │   └── build-macos.yml                  # Auto-build macOS DMG on push to main (Intel + Apple Silicon)
@@ -284,6 +367,8 @@ npm run dev
 
 Opens `http://localhost:5173` with HMR. The engine rebuilds instantly on save — no compilation step needed for the TypeScript engine (Vite handles it transparently).
 
+**Quick start with a save file:** Drag your `save.jkr` (typically `%APPDATA%/Balatro/1/save.jkr` on Windows or `~/Library/Application Support/Balatro/1/save.jkr` on macOS) onto the Input tab drop zone. All game state auto-populates — hand cards, jokers, deck, blinds, vouchers, and boss effects. Then click Compute.
+
 #### Production Build
 
 ```bash
@@ -362,8 +447,10 @@ npm run lint
 | Card enhancements | 9/9 (100%) | Bonus, Mult, Wild, Glass, Steel, Stone, Gold, Lucky |
 | Card editions | 5/5 (100%) | Foil, Holographic, Polychrome, Negative (+ None) |
 | Card seals | 5/5 (100%) | Red, Blue, Gold, Purple (+ None) |
-| Deck presets | 3/3 (100%) | Standard 52, Abandoned 40, Checkered 26 |
-| Vouchers | 8/8 engine, 6/6 UI (100%) | Hand/discard/size modifiers |
+| Deck composition presets | 3/3 (100%) | Standard 52, Abandoned 40, Checkered 26 |
+| Game deck presets | 15/15 (100%) | Red/Blue/Yellow/Green/Black/Magic/Nebula/Ghost/Abandoned/Checkered/Zodiac/Painted/Anaglyph/Plasma/Erratic |
+| Stake presets | 8/8 (100%) | White/Red/Green/Black/Blue/Purple/Orange/Gold |
+| Vouchers | 19/19 (100%) | 6 form-affecting + 13 tracking-only for deck presets |
 | Economy jokers | 9/20 income formulas | Rocket, Golden, Delayed Grat., Cloud 9, Rough Gem, Gift, Reserved Parking, Business, Mail |
 | i18n | 2 locales (100%) | English + 简体中文, all 150+ joker names localized |
 
@@ -371,7 +458,7 @@ npm run lint
 - 52 jokers are registry-only (economy + utility jokers without scoring hooks)
 - Tarot deck modification (The Magician, Strength, Hanged Man, etc.) is not simulated in the run simulator
 - Spectral cards are not implemented
-- Plasma Deck formula is applied as post-processing rather than integrated into the score pipeline
+- Plasma Deck scoring (balance chips & mult) is not yet implemented in the engine
 
 ---
 
@@ -397,7 +484,7 @@ MIT — do whatever you want, attribution appreciated.
 
 引擎通过穷举组合搜索回答这个问题：枚举所有卡牌子集 × 所有有意义的小丑排列，将每个候选方案送入忠实复现的五阶段计分流水线（卡牌计分 → 手牌强化 → 手牌小丑 → 小丑评估 → 最终得分）。每一次重触发、每一层 Blueprint 复制链、每一个 Boss debuff、每一张握在手中的 Steel 牌，都会被精确计算。
 
-但项目不止于单手优化。**对局模拟器**可推进最多 8 个 ante（24 个盲注），模拟每个 Boss 效果、每个商店阶段、每次从动态牌库中的抽牌 —— 全部由确定性 Knuth LCG 驱动，种子可重现。**弃牌分析器**穷举所有弃牌组合，利用牌库组成启发式算法估算补牌后预期价值。
+但项目不止于单手优化。**对局模拟器**可推进最多 8 个 ante（24 个盲注），模拟每个 Boss 效果、每个商店阶段、每次从动态牌库中的抽牌 —— 全部由确定性 Knuth LCG 驱动，种子可重现。**弃牌分析器**穷举所有弃牌组合，利用牌库组成启发式算法估算补牌后预期价值。**回合追踪器**提供持久化伴侣模式：应用弃牌建议、用实际抽到的牌替换迷雾占位牌、出牌并跟踪累计分数、自动扣减计数器 —— 将计算器从一次性工具转变为实时游戏伴侣。
 
 **核心设计原则：** 每个计分函数都是**纯函数**。`scorePlay()` 绝不修改其 `GameState` 参数。相同输入永远产生相同输出。这一特性使引擎可审计、可测试、可组合 —— 你可以创建搜索分支、通过 `jokerStateOverrides` 注入假设的小丑状态，并在零交叉污染的情况下比较结果。
 
@@ -488,6 +575,49 @@ chips → plus_mult → xmult → retrigger → brainstorm → blueprint → oth
 
 三种模式牌库构建器：Quick（计数输入）→ List（逐张牌管理）→ Visual（13 行 × 4 列网格，每格有强化/版本/封印指示器，支持批量条件筛选应用，3 种预设：Standard 52 / Abandoned 40 / Checkered 26）。
 
+#### 11. 存档导入 — 拖拽 .jkr 文件，一键填充全部状态
+
+将 Balatro 的 `.jkr` 存档文件拖入 Input 页面的拖放区。引擎自动完成 deflate 解压、Lua 表解析，并自动填充**所有字段**：手牌、小丑牌（含状态覆盖值）、完整牌库（含强化/版本/封印）、盲注、Ante、金币、凭证、Boss 效果。无需手动输入 —— 拖进去，点计算，直接看到当前游戏状态的最优出牌。
+
+数据管道：`DecompressionStream('deflate')` → 递归下降 Lua 解析器 → 领域映射器 → `useReducer` 注入。三个阶段均为纯 TypeScript，零依赖。
+
+#### 12. 回合追踪器 — 持久化伴侣模式
+
+将计算器转变为游戏中的实时回合伴侣：
+
+- **每回合仅设置一次** — 导入存档、配置牌组和难度，然后追踪整个回合，无需重新输入数据
+- **弃牌 → 迷雾牌 → 替换工作流** — 应用弃牌建议后，弃牌被替换为迷雾牌占位符（虚线"?"卡片）；点击每张迷雾牌，通过 CardEditor 设置实际抽到的牌
+- **出牌 → 累计分数** — 计算出最优出牌后，点击"打出这手牌"自动移除已出牌（替换为迷雾牌）、扣减出牌次数、累加 `roundScore`。通过 `scoreLog` 追踪每手牌记录
+- **RoundHUD 状态栏** — 持续可见：剩余出牌次数（含进度条）、剩余弃牌次数（含进度条）、回合分数 vs 盲注目标（含百分比）。"新回合"按钮重置回合计数器，保留小丑/牌库/牌型等级
+- **弃牌小丑自动更新** — Castle（+3筹码/弃牌）、Green Joker（-1倍率/弃牌）、Faceless（+5倍率/人脸牌弃牌）、Hit the Road（+0.5x/弃牌Jack）、Yorick 全部自动追踪
+
+#### 13. 牌组与难度选择 — 一键字段预设
+
+Input 页面顶部的两个下拉框根据游戏选择自动填充回合设置：
+
+**15 套牌组的完整字段映射：**
+| 牌组 | 自动填充字段 |
+|------|-------------|
+| 红 | `maxDiscardsBase = 4` |
+| 蓝 | `maxHandsBase = 5` |
+| 黄 | `dollars = 14` |
+| 绿 | 描述提示（无利息，每剩余出牌得$2/剩余弃牌得$1） |
+| 黑 | `maxHandsBase = 3`, `maxJokerSlots = 8` |
+| 魔法 / 星云 / 幽灵 / 黄道 | 预选对应优惠券 |
+| 废弃 / 棋盘 | 应用牌库组合预设 |
+| 彩绘 | `handSizeBase = 10`, `maxJokerSlots = 6` |
+| 浮雕 | 预选空白优惠券, `maxJokerSlots = 6` |
+| 等离子 / 古怪 | 描述提示（等离子计分未实现 / 随机牌组） |
+
+**8 种难度：**
+| 难度 | 效果 |
+|------|------|
+| 白 | 基础难度 |
+| 红 / 绿 / 黑 / 紫 / 橙 / 金 | 描述性机制提示 |
+| **蓝** | `maxDiscardsBase -= 1`（与牌组基础值自动运算） |
+
+牌组 + 难度效果正确组合（如蓝牌组 3 弃牌 + 蓝注 -1 = 2 弃牌）。全部变更通过 `computeDeckStakeBase()` 处理 —— 一个合并所选牌组和难度的纯函数。
+
 ---
 
 ### 🏗️ 架构
@@ -518,26 +648,40 @@ balatro-calc/
 │   │   ├── save-decoder.ts             # ★ v1.2: 零依赖 deflate 解压缩（DecompressionStream）
 │   │   ├── lua-parser.ts               # ★ v1.2: Lua 表 → JSON 递归下降解析器
 │   │   ├── save-parser.ts              # ★ Balatro .jkr 存档 → InjectedSaveData 编排器
+│   │   ├── deck-stake-data.ts          # ★ 15 套游戏牌组 + 8 种难度的自动字段映射
+│   │   ├── mod-protocol.ts              # ★ Mod↔工具 桥接共享类型（ModStateResponse, ModCommand）
 │   │   ├── search-worker.ts            #    Web Worker：迷雾 EV + 弃牌分析离线运行
 │   │   ├── search-client.ts            #    单例 Worker 管理器 + Promise API
 │   │   └── index.ts                     #    公共 API 导出
 │   │
 │   ├── components/                      # React 18 UI 层
-│   │   ├── input/                       #    输入组件（GameStateForm, CardEditor, JokerInput 等）
+│   │   ├── input/                       #    输入组件（GameStateForm, RoundHUD, CardEditor, JokerInput 等）
 │   │   ├── deck/                        #    牌库组件（DeckBuilder, DeckBuilderVisual）
+│   │   ├── mod/                         #    Mod连接组件（ModConnectionIndicator）
 │   │   ├── results/                     #    结果组件（ResultsPanel, DiscardPanel）
 │   │   ├── shop/                        #    商店组件（ShopPanel）
 │   │   ├── run-sim/                     #    模拟器组件（RunSimPanel, RunSummary, RunRoundCard）
 │   │   └── shared/                      #    共享组件（CardComponent, JokerBadge, card-display）
 │   │
 │   ├── hooks/                           # React 状态管理
-│   │   ├── useGameState.ts              #    21-action useReducer 中央状态
+│   │   ├── useGameState.ts              #    25-action useReducer 中央状态（回合追踪 + 牌组/难度选择）
 │   │   ├── useSearch.ts                 #    异步搜索 + Web Worker + 进度追踪
 │   │   ├── useDiscardAnalysis.ts        #    弃牌分析委托至 Worker
-│   │   └── useRunSimulation.ts          #    模拟器生命周期管理
+│   │   ├── useRunSimulation.ts          #    模拟器生命周期管理
+│   │   └── useModConnection.ts          #    Mod 桥接：HTTP 轮询、增量检测、指令发送
 │   │
 │   └── i18n/                            # 轻量 React Context 国际化
 │       └── locales/{en,zh-CN}.ts        #    英文/简体中文，150+ 小丑名全本地化
+│
+├── mod/                                 # Steammodded Lua 模组
+│   └── balatro-calc/
+│       ├── main.lua                      #    入口：挂载 Game.update/draw，启动服务器
+│       ├── lib/json.lua                  #    纯 Lua JSON 编解码器
+│       └── src/
+│           ├── server.lua                #    非阻塞 HTTP 服务器（luasocket TCP）
+│           ├── collector.lua             #    读取 G.hand/G.jokers/G.deck/G.GAME → JSON
+│           ├── highlighter.lua           #    绘制绿色（出牌）/ 红色（弃牌）卡牌高亮
+│           └── commands.lua              #    分发 POST /api/command 指令
 │
 └── tests/                               # Vitest 测试套件 — 18 文件 / 502 用例
 ```
@@ -552,6 +696,8 @@ npm install
 
 # 启动开发服务器 (localhost:5173, HMR)
 npm run dev
+
+# 快速上手：将存档文件 save.jkr（Windows: %APPDATA%/Balatro/1/save.jkr，macOS: ~/Library/Application Support/Balatro/1/save.jkr）拖入 Input 页面顶部的拖放区，所有游戏状态自动填充。点击 Compute 即可查看最优出牌。
 
 # 运行全部 502 个单元测试
 npx vitest run
@@ -581,8 +727,10 @@ npm run lint
 | 卡牌强化 | 9/9 (100%) | Bonus/Mult/Wild/Glass/Steel/Stone/Gold/Lucky |
 | 卡牌版本 | 5/5 (100%) | Foil/Holo/Poly/Negative + None |
 | 卡牌封印 | 5/5 (100%) | Red/Blue/Gold/Purple + None |
-| 牌组预设 | 3/3 (100%) | Standard 52 / Abandoned 40 / Checkered 26 |
-| 凭证 | 8/8 引擎, 6/6 UI (100%) | 手牌/弃牌/手牌大小修改器 |
+| 牌库组成预设 | 3/3 (100%) | Standard 52 / Abandoned 40 / Checkered 26 |
+| 游戏牌组预设 | 15/15 (100%) | 红/蓝/黄/绿/黑/魔法/星云/幽灵/废弃/棋盘/黄道/彩绘/浮雕/等离子/古怪 |
+| 难度预设 | 8/8 (100%) | 白/红/绿/黑/蓝/紫/橙/金 |
+| 凭证 | 19/19 (100%) | 6 个表单影响 + 13 个牌组预设追踪 |
 | 经济小丑 | 9/20 收入公式 | Rocket, Golden, Cloud 9, Rough Gem 等 |
 | 国际化 | 2 种语言 (100%) | English + 简体中文 |
 

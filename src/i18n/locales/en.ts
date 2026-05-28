@@ -290,6 +290,76 @@ const en: Translations = {
     zany: 'Zany Joker',
   },
 
+  roundHud: {
+    handsLeft: 'Hands',
+    discardsLeft: 'Discards',
+    roundScore: 'Round Score',
+    newRound: 'New Round',
+    confirmNewRound: 'Confirm New Round',
+  },
+
+  deckSelect: {
+    label: 'Deck',
+    labelStake: 'Stake',
+    names: {
+      red: 'Red Deck',
+      blue: 'Blue Deck',
+      yellow: 'Yellow Deck',
+      green: 'Green Deck',
+      black: 'Black Deck',
+      magic: 'Magic Deck',
+      nebula: 'Nebula Deck',
+      ghost: 'Ghost Deck',
+      abandoned: 'Abandoned Deck',
+      checkered: 'Checkered Deck',
+      zodiac: 'Zodiac Deck',
+      painted: 'Painted Deck',
+      anaglyph: 'Anaglyph Deck',
+      plasma: 'Plasma Deck',
+      erratic: 'Erratic Deck',
+    },
+    descriptions: {
+      red: '+1 discard',
+      blue: '+1 hand',
+      yellow: '+$10 at start',
+      green: 'No interest; $2/remaining hand + $1/remaining discard at round end',
+      black: '+1 joker slot, −1 hand',
+      magic: 'Start with Crystal Ball voucher',
+      nebula: 'Start with Telescope voucher, −1 consumable slot',
+      ghost: 'Start with Omen Globe; spectral cards in shop',
+      abandoned: '40 cards — no face cards',
+      checkered: '26 Spades + 26 Hearts',
+      zodiac: 'Start with Tarot Merchant, Planet Merchant, and Overstock vouchers',
+      painted: '+2 hand size, −1 joker slot',
+      anaglyph: 'Start with Blank voucher, −1 joker slot',
+      plasma: 'Score balanced between chips & mult (not yet implemented)',
+      erratic: 'Random deck — configure manually',
+    },
+  },
+
+  stake: {
+    names: {
+      white: 'White Stake',
+      red: 'Red Stake',
+      green: 'Green Stake',
+      black: 'Black Stake',
+      blue: 'Blue Stake',
+      purple: 'Purple Stake',
+      orange: 'Orange Stake',
+      gold: 'Gold Stake',
+    },
+    descriptions: {
+      white: 'Base difficulty',
+      red: 'Small blind gives no reward money',
+      green: 'Faster ante scaling',
+      black: 'Jokers can be Eternal',
+      blue: '−1 discard',
+      purple: 'Even faster ante scaling',
+      orange: 'Booster packs cost $1 more',
+      gold: 'Jokers can be Rental or Perishable',
+    },
+  },
+
   results: {
     playTheseCards: 'Play These Cards',
     held: 'Held',
@@ -306,6 +376,7 @@ const en: Translations = {
     vsBlind: 'vs Blind',
     score: 'Score',
     handType2: 'Hand Type',
+    playThisHand: 'Play This Hand',
   },
 
   states: {
@@ -355,6 +426,10 @@ const en: Translations = {
       crystal_ball: 'Crystal Ball',
       omen_globe: 'Omen Globe',
       observatory: 'Observatory',
+      telescope: 'Telescope',
+      tarot_merchant: 'Tarot Merchant',
+      planet_merchant: 'Planet Merchant',
+      blank: 'Blank',
     },
     bossEffectNames: {
       the_water: 'The Water',
@@ -440,6 +515,14 @@ const en: Translations = {
     applySuggestion: 'Apply Suggestion',
     applyTooltip: 'Apply this discard suggestion to your hand',
     applyDisabled: 'No discards remaining or boss prevents discarding',
+  },
+
+  modConnection: {
+    connected: 'Mod Connected',
+    disconnected: 'Mod Disconnected',
+    connecting: 'Connecting...',
+    error: 'Connection Error',
+    lastUpdate: 'Last update',
   },
 
   saveImport: {

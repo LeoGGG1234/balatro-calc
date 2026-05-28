@@ -46,8 +46,9 @@ export function HandCardsInput({ cards, onUpdateCard, onParseNotation }: HandCar
       ) : (
         <div className="hand-cards-grid">
           {cards.map((card, i) => (
-            <div key={`${card.id}_${i}`} className="hand-card-cell">
+            <div key={`${card.id}_${i}`} className={`hand-card-cell${card.fog ? ' hand-card-cell--fog' : ''}`}>
               <CardComponent card={card} size="sm" />
+              {card.fog && <span className="hand-card-cell__reveal">Click to set</span>}
               <CardEditor card={card} onChange={(c) => onUpdateCard(i, c)} index={i} />
             </div>
           ))}

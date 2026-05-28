@@ -55,6 +55,10 @@ export interface InjectedSaveData {
   maxDiscardsBase?: number;
   /** Base hand size before voucher/joker modifiers */
   handSizeBase?: number;
+  /** Cumulative round score (from mod live sync) */
+  roundScore?: number;
+  /** Per-hand score log (from mod live sync) */
+  scoreLog?: import('../hooks/useGameState').ScoreLogEntry[];
 }
 
 // ─── Enhancement / Edition / Seal mapping tables ─────────────────
@@ -188,7 +192,11 @@ export async function parseBalatroSave(fileBuffer: ArrayBuffer): Promise<Injecte
   let root: Record<string, unknown>;
   try {
     const parser = new LuaParser(decompressedText);
-    root = parser.parseRoot() as Record<string, unknown>;
+    const parsed = parser.parseRoot();
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new SaveParseError('Invalid save format: expected a table at root level.');
+    }
+    root = parsed as Record<string, unknown>;
   } catch (err) {
     if (err instanceof SaveParseError) throw err;
     if (err instanceof LuaParseError) {

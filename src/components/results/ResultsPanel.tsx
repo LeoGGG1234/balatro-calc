@@ -1,14 +1,18 @@
 import { useI18n } from '../../i18n/context';
-import type { SearchResult, ScoredPlay } from '../../engine/types';
+import type { Card, SearchResult, ScoredPlay } from '../../engine/types';
+import { HandType } from '../../engine/types';
 import { formatScore } from '../../engine/search';
 import { getJoker } from '../../engine/joker-effects';
 import { CardComponent } from '../shared/CardComponent';
 
 interface ResultsPanelProps {
   result: SearchResult;
+  handCards?: Card[];
+  handsRemaining?: number;
+  onPlayHand?: (playedCardIndices: number[], score: number, handType: HandType) => void;
 }
 
-export function ResultsPanel({ result }: ResultsPanelProps) {
+export function ResultsPanel({ result, handCards, handsRemaining, onPlayHand }: ResultsPanelProps) {
   const { t } = useI18n();
 
   if (!result.optimalPlay) {
@@ -20,6 +24,17 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
   }
 
   const play = result.optimalPlay;
+
+  // Map played cards back to original handCards indices by matching card.id
+  const playedIndices: number[] = [];
+  if (handCards && onPlayHand) {
+    const playedIds = new Set(play.playedCards.map(c => c.id));
+    for (let i = 0; i < handCards.length; i++) {
+      if (playedIds.has(handCards[i].id)) {
+        playedIndices.push(i);
+      }
+    }
+  }
 
   return (
     <div className="results">
@@ -91,6 +106,22 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Play Hand button */}
+        {onPlayHand && (
+          <div className="results__play-hand">
+            <button
+              className="btn-play-hand"
+              disabled={!handsRemaining || handsRemaining <= 0}
+              onClick={() => onPlayHand(playedIndices, play.totalScore, play.handType)}
+            >
+              Play This Hand ({t.handTypes[play.handType]}) →
+            </button>
+            {handsRemaining !== undefined && handsRemaining <= 0 && (
+              <span className="results__no-hands">No hands remaining</span>
+            )}
           </div>
         )}
       </section>

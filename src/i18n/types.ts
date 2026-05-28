@@ -81,6 +81,27 @@ export interface Translations {
   // Joker names
   jokerNames: Record<string, string>;
 
+  // Deck & Stake selection
+  deckSelect: {
+    label: string;
+    labelStake: string;
+    names: Record<string, string>;
+    descriptions: Record<string, string>;
+  };
+  stake: {
+    names: Record<string, string>;
+    descriptions: Record<string, string>;
+  };
+
+  // Round HUD
+  roundHud: {
+    handsLeft: string;
+    discardsLeft: string;
+    roundScore: string;
+    newRound: string;
+    confirmNewRound: string;
+  };
+
   // Results
   results: {
     playTheseCards: string;
@@ -98,6 +119,7 @@ export interface Translations {
     vsBlind: string;
     score: string;
     handType2: string;
+    playThisHand: string;
   };
 
   // States
@@ -181,6 +203,15 @@ export interface Translations {
     errors: {
       invalidFormat: string;
     };
+  };
+
+  // Mod connection
+  modConnection: {
+    connected: string;
+    disconnected: string;
+    connecting: string;
+    error: string;
+    lastUpdate: string;
   };
 
   // Save import

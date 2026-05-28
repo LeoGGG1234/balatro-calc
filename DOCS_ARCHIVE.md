@@ -3,11 +3,11 @@
 ## 技术决策记录与架构演进白皮书
 
 **Project**: Balatro Calc — Optimal Decision Engine for Balatro
-**Version Range**: v1.1 → v1.1.5 (Architecture Hardening & Detox Sprint) → v1.2-rc1 (Reverse Data Pipeline: Decoder & Parser Layer)
+**Version Range**: v1.1 → v1.1.5 (Architecture Hardening & Detox Sprint) → v1.2-rc1 (Reverse Data Pipeline: Decoder & Parser Layer) → v1.2-rc2 (Round Session Tracker + Deck & Stake Presets) → v1.3-rc (Steammodded Mod — Bidirectional Real-Time Bridge)
 **Authors**: Chief Technical Documentation Expert & Quality Audit Directorate
-**Date**: 2026-05-27
-**Status**: Active — v1.2 Phase 1 Delivered; Phase 2 Pending
-**Test Baseline**: 502 automated regression tests, 18 test files, ~720 ms, 100% pass rate, 0 TypeScript errors, production build clean
+**Date**: 2026-05-29
+**Status**: Active — v1.2 Phase 1 Delivered; Round Session Tracker + Deck/Stake Presets Delivered; Mod Bidirectional Bridge Delivered
+**Test Baseline**: 502 automated regression tests, 18 test files, ~720 ms, 100% pass rate, 0 TypeScript errors, production build clean (388 KB JS + 35 KB CSS)
 
 ---
 
@@ -19,6 +19,8 @@
 4. [Verification & Metrics](#4-verification--metrics)
 5. [Roadmap: Toward v1.2 Reverse Data Pipeline](#5-roadmap-toward-v12-reverse-data-pipeline)
 6. [v1.2 Phase 1 — Save Decoder & Lua Parser Pipeline (Actuals & Delta Analysis)](#6-v12-phase-1--save-decoder--lua-parser-pipeline-actuals--delta-analysis)
+7. [v1.2-rc2 — Round Session Tracker & Deck/Stake Presets](#7-v12-rc2--round-session-tracker--deckstake-presets)
+8. [v1.3-rc — Steammodded Mod: Bidirectional Real-Time Bridge](#8-v13-rc--steammodded-mod-bidirectional-real-time-bridge)
 
 ---
 
@@ -407,7 +409,7 @@ save-decoder.ts (51 lines)     lua-parser.ts (315 lines)
 - Three defensive layers: empty buffer check → deflate decompression try/catch → empty output check
 
 **Module 2 — `lua-parser.ts`**: Standalone Lua table parser
-- `parseLuaTableToJSON(luaText: string): any` — convenience one-shot function
+- `parseLuaTableToJSON(luaText: string): unknown` — convenience one-shot function
 - `LuaParser` class — exported for advanced/progressive usage
 - Custom error class `LuaParseError` — all parse errors include descriptive context
 - Supports: nested `{}`, `["key"]=value`, `[num]`, bareword keys, implicit array indices, booleans, nil→null, floats, negatives, string escapes
@@ -463,6 +465,8 @@ The following deviations from the original v1.2 plan were discovered during impl
 | 6 | **Stub data scale** | "一段典型快照" | 70-line `BALATRO_SAVE_STUB` with 6 deck cards (all modifier combos), 5 jokers (varying editions + extra_value), 2 hand cards (facing/debuff), full GAME state | Comprehensive golden master enables 6 independent assertion blocks covering every field category |
 | 7 | **Decompression error prefix** | Generic error message | All errors prefixed `INVALID_SAVE_STREAM:` — grepable, machine-parseable | Enables upstream consumers to reliably detect decompression failures vs. parse failures |
 | 8 | **save-parser.ts line count** | (Not estimated) | Reduced from 888 → 593 lines (-295, -33%) | Removed 297 lines of inline decompression + LuaParser class; added ~5 lines of imports + re-exports |
+| 9 | **Type safety: `any` escape** | (Not specified) | `parseLuaTableToJSON` return type `any` → `unknown` (post-audit fix) | `any` silently erases all type safety for callers; `unknown` forces explicit narrowing |
+| 10 | **Unsafe type assertion** | (Not specified) | Added runtime type guard before `as Record<string, unknown>` cast in `parseBalatroSave()` (post-audit fix) | If parsed root is not a table, downstream silently produces corrupt data; guard checks `typeof parsed !== 'object' \|\| parsed === null \|\| Array.isArray(parsed)` |
 
 ---
 
@@ -609,7 +613,7 @@ The following deviations from the original v1.2 plan were discovered during impl
 ##### `src/engine/lua-parser.ts` — Lua Table → JSON Parser (v1.2-rc1, NEW)
 
 ```
-[ADDED]    parseLuaTableToJSON(luaText: string): any — One-shot convenience function
+[ADDED]    parseLuaTableToJSON(luaText: string): unknown — One-shot convenience function
 [ADDED]    LuaParser class — Exported for progressive/advanced usage
 [ADDED]    LuaParseError class — Custom error with descriptive messages
 [ADDED]    Tokenizer: handles strings (double/single quoted, escape sequences \n \t \r \\ \" \'),
@@ -636,7 +640,9 @@ The following deviations from the original v1.2 plan were discovered during impl
 [ADDED]    import { decompressBalatroSave, SaveDecodeError } from './save-decoder'
 [ADDED]    import { LuaParser, LuaParseError } from './lua-parser'
 [MODIFIED] Step 1: Calls decompressBalatroSave() instead of inline decompression
-[MODIFIED] Step 2: Catches LuaParseError in addition to SaveParseError
+[MODIFIED] Step 2: Catches LuaParseError in addition to SaveParseError, plus runtime type guard
+           (`typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)`)
+           before `as Record<string, unknown>` cast — prevents corrupt data propagation
 [ADDED]    Re-export: export { LuaParser, LuaParseError } from './lua-parser'
            (backward compatibility for tests importing LuaParser from save-parser.ts)
 [NET]     888 lines → 593 lines (-295, -33%)
@@ -913,6 +919,622 @@ The v1.2 Phase 2 batch ingestion pipeline will use this distinction to:
 
 ---
 
-*Document updated on 2026-05-27. v1.1.5 Architecture Hardening Sprint: Complete. v1.2-rc1 Phase 1: Delivered (502/502 tests passing).*
+*Document updated on 2026-05-27. v1.1.5 Architecture Hardening Sprint: Complete. v1.2-rc1 Phase 1: Delivered (502/502 tests passing). Round Session Tracker + Deck/Stake Presets: Delivered.*
 
-*Balatro Calc — Version 1.2-rc1 — Reverse Data Pipeline: Decoder & Parser Layer — Active.*
+*Balatro Calc — Version 1.2-rc2 — Round Session Tracker & Deck/Stake Presets — Active.*
+
+---
+
+## 7. v1.2-rc2 — Round Session Tracker & Deck/Stake Presets
+
+### 7.1 Round Session Tracker — Persistent Companion Mode
+
+#### Motivation
+
+The v1.1.5 calculator was a **static "what-if" tool**: every hand required the user to re-enter all 8 hand cards from scratch, manually adjust `handsPlayed`/`discardsUsed` counters, and track cumulative score mentally. This "close → enter → compute → open → play → close → re-enter" loop was friction-heavy for users who wanted to use the tool alongside live gameplay.
+
+The core insight: most infrastructure already existed:
+- `APPLY_DISCARD_SUGGESTION` already handled discard → remove cards → create fog placeholders → decrement counter
+- `CardEditor` already supported editing any hand slot
+- `handsPlayed`/`discardsUsed` counters existed but were buried in the form
+- Fog cards (`fog: true`) already existed in unseeded mode
+
+**Only three things were missing:**
+1. A "play hand" flow — remove played cards, create fog replacements, decrement hands counter, accumulate score
+2. Fog card replacement UX — clearer visual cues + one-click replacement
+3. Round status HUD — hands/discards remaining + cumulative score always visible
+
+#### Architecture
+
+**New state fields in `GameStateForm`:**
+
+```typescript
+roundScore: number;       // cumulative score this round
+scoreLog: ScoreLogEntry[]; // per-hand record
+// ScoreLogEntry: { handType: HandType; score: number; cardsPlayed: number }
+```
+
+**New actions:**
+- `PLAY_HAND` — `{ indices: number[]; score: number; handType: HandType }`
+  - Replaces played cards at `indices` with fog cards, `handsPlayed += 1`, `roundScore += score`, `scoreLog.push(...)`
+- `NEW_ROUND` — Resets `handsPlayed=0`, `discardsUsed=0`, `isFinalHand=false`, `roundScore=0`, `scoreLog=[]` — preserves all other state (jokers, deck, handLevels, vouchers, etc.)
+
+**New component — `RoundHUD.tsx`:**
+- Persistently visible status bar between save import drop zone and Hand Cards section
+- Three progress-bar stats: Hands remaining (blue), Discards remaining (purple), Round Score vs Blind target (yellow/green when ≥100%)
+- New Round button with two-step confirm/cancel flow (prevents accidental reset)
+- Score percentage bar turns green when `roundScore >= blindChips`
+
+**New ResultsPanel feature — "Play This Hand" button:**
+- Appears below the optimal play card when `handsRemaining > 0`
+- Matches `ScoredPlay.playedCards` to `handCards` by `card.id` to determine indices
+- Calls `onPlayHand(indices, score, handType)` → dispatches PLAY_HAND → auto-switches to Input tab
+- Disabled state shows "No hands remaining"
+
+**Fog card UX enhancement — `HandCardsInput.tsx`:**
+- Fog-card cells get `hand-card-cell--fog` CSS class (dashed outline)
+- "Click to set" label overlaid on fog cards
+- CSS: `.card--fog` gets dashed border + reduced opacity
+
+**Discard joker auto-update — `computeDiscardJokerDeltas()`:**
+- Castle: +3 chips per discard action
+- Green Joker: -1 mult per discard (floor at 0)
+- Faceless: +5 mult per face card discarded
+- Hit the Road: +0.5 ×Mult per Jack discarded
+- Yorick: raw discard count (scorer divides by 23)
+- Burnt Joker: first discard of round upgrades the discarded hand type's level
+
+#### Data Flow
+
+```
+User plays hand in game
+      ↓
+Tool Results tab: see optimal play → click "Play This Hand →"
+      ↓
+dispatch PLAY_HAND({ indices, score, handType })
+      ↓
+Reducer: remove played cards → add fog cards → handsPlayed++ → roundScore += score
+      ↓
+Auto-switch to Input tab → see kept cards + fog placeholders
+      ↓
+Click fog cards → CardEditor → set actual drawn cards
+      ↓
+State ready → next decision (Discard or Compute)
+      ↓
+Round ends → "New Round" button → counters reset (jokers/deck preserved)
+```
+
+#### Files Changed
+
+| File | Δ | Change |
+|------|---|--------|
+| `useGameState.ts` | +65 | `ScoreLogEntry`, `PLAY_HAND`/`NEW_ROUND` actions, `computeDiscardJokerDeltas`, `resolveBurntJokerUpgrade`, `playHand()`/`newRound()` callbacks |
+| `RoundHUD.tsx` | +105 (NEW) | Status bar with progress bars + new round button |
+| `ResultsPanel.tsx` | +30 | `onPlayHand`/`handCards`/`handsRemaining` props, index matching by card.id, "Play This Hand" button |
+| `HandCardsInput.tsx` | +5 | Fog-card CSS class + "Click to set" label |
+| `GameStateForm.tsx` | +10 | RoundHUD integration, `onNewRound` prop |
+| `App.tsx` | +10 | `handlePlayHand`/`handleNewRound` callbacks, prop wiring |
+| `index.css` | +100 | RoundHUD layout, play-hand button, fog card visual |
+| `types.ts` (i18n) | +5 | `roundHud` section |
+| `en.ts` / `zh-CN.ts` | +10 | `roundHud.*` + `results.playThisHand` translations |
+
+---
+
+### 7.2 Deck & Stake Presets — Instant Field Population
+
+#### Motivation
+
+When setting up a fresh session (without save import), users had to manually remember and configure:
+- `maxHandsBase` for Blue/Black Deck
+- `maxDiscardsBase` for Red Deck
+- `handSizeBase` for Painted Deck
+- Starting dollars for Yellow Deck
+- Starting vouchers for Magic/Nebula/Ghost/Zodiac/Anaglyph decks
+- `maxJokerSlots` for Black/Painted/Anaglyph decks
+- Deck composition preset for Abandoned/Checkered decks
+
+This was 7+ manual adjustments before the first computation. A deck selector reduces this to **one click**, dramatically reducing setup friction.
+
+#### Architecture
+
+**New module — `src/engine/deck-stake-data.ts`:**
+
+```typescript
+type DeckId = 'red' | 'blue' | ... | 'erratic';  // 15 decks
+type StakeId = 'white' | 'red' | ... | 'gold';      // 8 stakes
+
+interface DeckDef {
+  id: DeckId;
+  maxHandsBase?: number;
+  maxDiscardsBase?: number;
+  handSizeBase?: number;
+  dollars?: number;
+  deckPreset?: 'standard' | 'abandoned' | 'checkered';
+  activeVouchers?: string[];
+  maxJokerSlots?: number;
+}
+
+interface StakeDef {
+  id: StakeId;
+  maxDiscardsModifier?: number;  // Blue Stake: -1
+  increasedAnteScaling?: boolean; // Green/Purple Stake
+}
+
+function computeDeckStakeBase(deckId, stakeId): { ... }
+```
+
+**Composite computation — `computeDeckStakeBase()`:**
+- Called by both `SELECT_DECK` and `SELECT_STAKE` reducers
+- Merges deck defaults with stake modifiers: `finalDiscards = (deck.maxDiscardsBase ?? 3) + (stake.maxDiscardsModifier ?? 0)`
+- Ensures consistency regardless of selection order
+
+**New state fields in `GameStateForm`:**
+- `selectedDeck: DeckId | null`
+- `selectedStake: StakeId | null`
+- `maxJokerSlots: number` (default 7; was previously hardcoded)
+
+**New reducer cases:**
+- `SELECT_DECK` — Looks up deck def, applies all fields + optional deck composition preset
+- `SELECT_STAKE` — Looks up stake def, recalculates using `computeDeckStakeBase(state.selectedDeck, action.stakeId)`
+- `ADD_JOKER` updated: `state.jokers.length >= state.maxJokerSlots` (was hardcoded `>= 7`)
+
+**New callbacks:** `selectDeck(deckId)`, `selectStake(stakeId)`
+
+**UI — Two dropdowns in `GameStateForm.tsx`:**
+- Positioned between RoundHUD and Hand Cards section
+- Side-by-side layout (`.deck-stake-row` flex container)
+- Each dropdown shows the selected item's description as a hint line below
+- Calls `onSelectDeck` / `onSelectStake` on change
+
+**Voucher expansion — `ALL_VOUCHERS` extended:**
+- 6 form-affecting vouchers (existing): Grabber, Nacho Tong, Wasteful, Recyclomancy, Paint Brush, Palette
+- 13 tracking-only vouchers (new): Overstock, Overstock Plus, Clearance Sale, Liquidation, Reroll Surplus, Reroll Glut, Crystal Ball, Omen Globe, Observatory, Telescope, Tarot Merchant, Planet Merchant, Blank
+
+**i18n coverage:**
+- `deckSelect.names` — 15 deck names (en + zh-CN)
+- `deckSelect.descriptions` — 15 deck descriptions
+- `stake.names` — 8 stake names
+- `stake.descriptions` — 8 stake descriptions
+- `shop.voucherNames` — 4 new entries (telescope, tarot_merchant, planet_merchant, blank)
+
+#### Design Decision: Why `computeDeckStakeBase()` is a Pure Function
+
+Both `SELECT_DECK` and `SELECT_STAKE` call the same pure function `computeDeckStakeBase(newDeckId, currentStakeId)` or `computeDeckStakeBase(currentDeckId, newStakeId)`. This ensures:
+1. **Order independence**: Selecting Deck then Stake produces the same result as Stake then Deck
+2. **Single source of truth**: The merge formula lives in one function, not duplicated across two reducer cases
+3. **Testability**: `computeDeckStakeBase()` can be unit tested independently of the reducer
+
+#### Files Changed
+
+| File | Δ | Change |
+|------|---|--------|
+| `deck-stake-data.ts` | +198 (NEW) | `DeckId`/`StakeId` types, `ALL_DECKS`/`ALL_STAKES` arrays, `computeDeckStakeBase()` |
+| `useGameState.ts` | +50 | `selectedDeck`/`selectedStake`/`maxJokerSlots` fields, `SELECT_DECK`/`SELECT_STAKE` actions + reducer cases, `selectDeck()`/`selectStake()` callbacks, 13 new vouchers |
+| `GameStateForm.tsx` | +30 | Deck + Stake dropdown UI with description hints |
+| `App.tsx` | +2 | `onSelectDeck`/`onSelectStake` prop wiring |
+| `index.css` | +20 | `.deck-stake-row` / `.deck-stake-field` / `.deck-stake-hint` |
+| `types.ts` (i18n) | +15 | `deckSelect` + `stake` translation interfaces |
+| `en.ts` / `zh-CN.ts` | +60 | 15 deck names/descriptions + 8 stake names/descriptions + 4 voucher names |
+
+---
+
+## 8. v1.3-rc — Steammodded Mod: Bidirectional Real-Time Bridge
+
+### 8.1 Motivation — From Manual Calculator to Second-Screen Companion
+
+#### 问题域
+
+The v1.2-rc2 calculator with Round Session Tracker successfully reduced friction for persistent companion use, but one fundamental pain point remained: **manual data entry**. Every new hand required the user to manually input 8 hand cards via dropdowns (40+ clicks) or type card notation strings. For users playing alongside the game, this "alt-tab → type → compute → alt-tab → play → repeat" loop was still friction-heavy.
+
+The core insight: Balatro runs **inside a Lua VM** with full access to all game state. Steammodded provides the modding framework. If we could bridge that Lua runtime to the web tool in real-time:
+
+1. **Game → Tool**: Auto-sync hand cards, jokers (with accumulated state), deck composition, blinds, antes — zero manual entry
+2. **Tool → Game**: Send highlighting commands back — green overlay on recommended play cards, red overlay on recommended discard cards
+3. **Workflow**: Open web tool on second screen → mod auto-syncs form → click "Compute" → cards highlighted in-game → play → mod detects change → auto-refresh → ready for next compute
+
+This transforms the tool from a "manual calculator" into a **seamless second-screen companion**. The web tool remains the decision-making core; the mod eliminates the tedious data entry.
+
+#### 设计原则
+
+1. **Web tool is core, Mod is enhancement**: If the mod is unavailable, the tool must work perfectly in manual mode. The mod adds convenience, not dependence.
+2. **Zero configuration**: No config files, no port settings. The mod starts automatically, tries multiple ports, and degrades gracefully.
+3. **Non-blocking**: The Lua HTTP server must not block the game's main loop. Uses `settimeout(0)` for non-blocking I/O — one connection per frame.
+4. **Delta-only updates**: The web tool only updates state when the JSON actually changes (string comparison), preventing unnecessary re-renders.
+5. **0-based indices in protocol**: Consistent with TypeScript conventions in the web tool; Lua side converts to 1-based internally.
+
+---
+
+### 8.2 ADR #06: Lua HTTP Server + HTTP Polling Bridge
+
+- **ADR ID**: `BALATRO-CALC-ADR-006`
+- **Status**: Accepted & Implemented
+- **Date**: 2026-05-29
+- **Affected Components**: 8 Lua files (mod/), 4 TypeScript files (src/)
+
+#### Context
+
+Two fundamentally different runtimes needed to communicate: a **Lua 5.1 VM** inside Balatro/Steammodded, and a **React/TypeScript SPAs** running in a browser. The communication pattern is bidirectional:
+
+- **Game → Tool (high frequency)**: State updates on every meaningful game event (cards drawn, jokers triggered, hand played). The tool needs fresh data within ~300ms for responsive auto-fill.
+- **Tool → Game (low frequency)**: Highlighting commands on user interaction (click "Compute", click "Apply Discard"). Typically 1–5 commands per minute.
+
+#### Options Considered
+
+| Option | Game→Tool Latency | Implementation Complexity | Reliability |
+|--------|-------------------|---------------------------|-------------|
+| **HTTP Server (Mod) + Polling (Web)** | ~300ms (poll interval) | Low (luasocket TCP + fetch()) | High (plain HTTP, no stateful connection) |
+| WebSocket Server (Mod) | ~10ms (push) | High (Lua WebSocket handshake + frame management) | Medium (connection drops, reconnection logic) |
+| File Watcher (Mod writes, Web reads) | 500ms+ (poll file) | Very Low | Low (file locking, cross-platform paths) |
+| Named Pipe / Unix Socket | ~10ms | Very High (no browser API for pipes) | Not viable (browser sandbox) |
+
+#### Decision
+
+**HTTP Server (Mod) + HTTP Polling (Web Tool)**. Rationale:
+
+1. **Luasocket is bundled with Steammodded** — HTTP over TCP is the lowest-friction option in the Lua ecosystem
+2. **Polling at 300ms is sufficient** — Balatro is a turn-based card game. The user spends seconds (not milliseconds) making decisions. 300ms is imperceptible.
+3. **HTTP is stateless** — No connection state to manage. If the game pauses or the browser tab backgrounds, polling naturally resumes.
+4. **CORS and CSP** are straightforward — a single `connect-src` entry in Tauri CSP.
+5. **Debugging with curl** — `curl localhost:18888/api/health` is trivially testable without any tooling.
+
+The primary tradeoff (300ms latency vs. real-time push) is acceptable for a card game companion tool. WebSocket's complexity (handshake upgrade, frame parsing, ping/pong keepalive in Lua) was not justified by the marginal latency improvement.
+
+#### Architecture Diagram
+
+```
+┌─────────────────────────────────────────┐
+│  Balatro Game Process                   │
+│                                         │
+│  Steammodded                            │
+│  ┌──────────────────────────────────┐   │
+│  │  mod/balatro-calc/               │   │
+│  │                                  │   │
+│  │  main.lua                        │   │
+│  │  ├─ require modules              │   │
+│  │  ├─ start server(port 18888-93)  │   │
+│  │  ├─ hook Game.update → tick()    │   │
+│  │  └─ hook Game.draw → draw()      │   │
+│  │                                  │   │
+│  │  server.lua                      │   │
+│  │  ├─ socket.tcp() + settimeout(0) │   │
+│  │  ├─ tick(): accept → parse → route│   │
+│  │  └─ Routes: health/state/command │   │
+│  │                                  │   │
+│  │  collector.lua                   │   │
+│  │  ├─ G.hand.cards → handCards[]   │   │
+│  │  ├─ G.jokers.cards → jokers[]    │   │
+│  │  ├─ G.deck.cards → deck[]        │   │
+│  │  └─ G.GAME → round/blinds/voucher│   │
+│  │                                  │   │
+│  │  highlighter.lua                 │   │
+│  │  ├─ play_set / discard_set       │   │
+│  │  └─ draw(): love.graphics overlay│   │
+│  │                                  │   │
+│  │  commands.lua                    │   │
+│  │  └─ dispatch(highlight_play/     │   │
+│  │       discard/clear)             │   │
+│  └──────────────────────────────────┘   │
+│                    │                     │
+│         localhost:18888                  │
+└────────────────────┼────────────────────┘
+                     │ HTTP
+                     ▼
+┌─────────────────────────────────────────┐
+│  Web Browser / Tauri WebView            │
+│                                         │
+│  React 18 SPA                           │
+│  ┌──────────────────────────────────┐   │
+│  │  useModConnection hook           │   │
+│  │  ├─ Health check every 2s        │   │
+│  │  ├─ State poll every 300ms       │   │
+│  │  ├─ Delta detect (JSON compare)  │   │
+│  │  └─ sendCommand() → POST        │   │
+│  │                                  │   │
+│  │  App.tsx                         │   │
+│  │  ├─ Auto-inject on state change  │   │
+│  │  ├─ Auto-highlight on compute    │   │
+│  │  └─ Clear highlights on new state│   │
+│  │                                  │   │
+│  │  ModConnectionIndicator.tsx      │   │
+│  │  └─ Green/Red/Yellow dot + text  │   │
+│  └──────────────────────────────────┘   │
+└─────────────────────────────────────────┘
+```
+
+---
+
+### 8.3 Implementation — Mod Side (Lua)
+
+#### File Structure
+
+```
+mod/balatro-calc/
+├── main.lua                  (~107 lines)  Steammodded entry point
+├── lib/json.lua              (~188 lines)  Pure-Lua JSON encoder/decoder
+├── README.md                               Installation + API docs
+└── src/
+    ├── server.lua            (~236 lines)  Non-blocking HTTP server
+    ├── collector.lua         (~427 lines)  Game state → JSON serializer
+    ├── highlighter.lua        (~91 lines)  Card overlay renderer
+    └── commands.lua           (~40 lines)  POST /api/command dispatcher
+```
+
+#### main.lua — Entry Point
+
+- Checks luasocket availability via `pcall(require, "socket")` — graceful degradation if missing
+- Starts HTTP server on ports 18888 → 18893 (auto-fallback)
+- Hooks `Game.update` → calls `server.tick()` (non-blocking, one connection per frame)
+- Hooks `Game.draw` → calls `highlighter.draw()` (overlays on card sprites in hand)
+- Wires `commands.dispatch` to `highlighter` module
+
+#### server.lua — HTTP Server
+
+- `socket.tcp()` with `settimeout(0)` for non-blocking accept
+- `tick()` called every `Game.update` frame:
+  1. Accept one pending connection (if any)
+  2. Parse HTTP request line + headers (no streaming body parser needed — payloads are small JSON)
+  3. Route: `GET /api/health` → `{"status":"ok"}`
+  4. Route: `GET /api/state` → `collector.collect()` → `json.encode()`
+  5. Route: `POST /api/command` → parse body → `commands.dispatch()`
+  6. Send HTTP response with CORS headers
+- Error handling: connection errors caught per-tick, server state unaffected
+- Single-request-per-tick design: at 60fps, handles 60 req/s — far above the 3.3 req/s from 300ms polling
+
+#### collector.lua — State Collection
+
+Reads Balatro Lua globals and produces JSON matching `InjectedSaveData` + `ModStateResponse`:
+
+| Field | Source | Mapping |
+|-------|--------|---------|
+| `handCards[]` | `G.hand.cards` | rank/suit/enhancement/edition/seal/debuffed/fog, id = `hand_<index>` |
+| `jokers[]` | `G.jokers.cards` | id from `ability.key` (strip `j_` prefix), edition from `ability.set` |
+| `jokerStateOverrides` | joker cards | `ability.extra_value` / `ability.counter` / `config.extra` |
+| `handLevels` | consumed planet cards | planet name → HandType via `PLANET_TO_HAND` map |
+| `deckComposition` | `G.deck.cards` | aggregate by rank/suit, build full cards[] list with modifiers |
+| `blindType` | `blind_states` | Small defeated + Big not → Big; both → Boss |
+| `blindChips` | `G.GAME.round_resets.blind.chips` | direct |
+| `debuffed ranks/suits` | `G.GAME.round_resets.blind.debuff` | mapped to canonical enum values |
+| `dollars` | `G.GAME.current_round.dollars` | direct |
+| `antes` | `G.GAME.round_resets.ante` | direct |
+| `seed` | `G.GAME.pseudorandom.seed` | direct |
+| `activeVouchers` | `G.GAME.current_round.vouchers` | key → canonical ID |
+| `activeBossEffect` | current boss key | key → boss effect ID via `BOSS_KEY_MAP` |
+| `roundScore` | accumulated from scoreLog | sum of all played hand scores this round |
+| `scoreLog` | maintained by mod | per-hand record: {handType, score, cardsPlayed} |
+
+**Key mapping tables** (Lua side, kept in sync with TypeScript side):
+- `RANK_MAP`: `'2'..'10','Jack'→'J','Queen'→'Q','King'→'K','Ace'→'A'`
+- `SUIT_MAP`: `'Hearts'→'H','Diamonds'→'D','Clubs'→'C','Spades'→'S'`
+- `ENHANCEMENT_MAP`: 9 entries (`'Base'→none,'Bonus'→bonus,'Mult'→mult,...`)
+- `EDITION_MAP`: 5 entries (`'Default'→none,'Foil'→foil,'Holographic'→holo,...`)
+- `SEAL_MAP`: 5 entries (`'Red'→red,'Blue'→blue,'Gold'→gold,'Purple'→purple`)
+- `BOSS_KEY_MAP`: 27 entries (`bl_water→the_water,...`)
+- `VOUCHER_KEY_MAP`: 6 entries (`v_grabber→grabber,...`)
+- `PLANET_TO_HAND`: 13 entries (planet consumable → HandType)
+
+#### highlighter.lua — Card Highlighting
+
+- Maintains `play_set` (green) and `discard_set` (red) as sets of 0-based indices
+- `set_play_highlights(indices)` / `set_discard_highlights(indices)` / `clear()`
+- `draw()` hook (called after `Game.draw`):
+  1. Iterate `G.hand.cards[i]`
+  2. Read `card.T.x/y/w/h` for position and dimensions
+  3. Draw semi-transparent overlay rectangle via `love.graphics.rectangle("fill", ...)`
+  4. Draw colored border via `love.graphics.rectangle("line", ...)`
+  5. Green = `{0, 1, 0, 0.35}`, Red = `{1, 0, 0, 0.35}`
+  6. Protocol uses 0-based indices; Lua internally converts to 1-based
+
+#### commands.lua — Command Dispatch
+
+```lua
+function commands.dispatch(cmd_type, payload)
+  if cmd_type == "highlight_play" then
+    highlighter.set_play_highlights(payload.indices)
+  elseif cmd_type == "highlight_discard" then
+    highlighter.set_discard_highlights(payload.indices)
+  elseif cmd_type == "clear_highlights" then
+    highlighter.clear()
+  end
+end
+```
+
+#### json.lua — Pure-Lua JSON Codec
+
+- 188-line zero-dependency JSON encoder/decoder
+- `json.encode(table)` — handles strings, numbers, booleans, null, arrays, nested objects
+- `json.decode(string)` — recursive descent parser supporting all JSON value types
+- Chosen over bundled luasocket JSON because Steammodded doesn't include a JSON library
+
+---
+
+### 8.4 Implementation — Web Side (TypeScript)
+
+#### New Files
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/engine/mod-protocol.ts` | 53 | Shared types: `ModStateResponse extends InjectedSaveData`, `ModCommand` union, constants (`MOD_HOST`, `POLL_INTERVAL_MS`, etc.) |
+| `src/hooks/useModConnection.ts` | 150 | React hook: health check (2s), state poll (300ms), delta detection (JSON compare), `sendCommand()`, convenience methods |
+| `src/components/mod/ModConnectionIndicator.tsx` | 38 | Green/Red/Yellow/Pink status dot + last update time |
+
+#### Modified Files
+
+| File | Δ Lines | Changes |
+|------|---------|---------|
+| `src/engine/save-parser.ts` | +4 | `InjectedSaveData` adds `roundScore?: number` + `scoreLog?: ScoreLogEntry[]` |
+| `src/hooks/useGameState.ts` | +10 | `INJECT_SAVE_STATE` maps `roundScore`/`scoreLog` |
+| `src/App.tsx` | +55 | `useModConnection()` integration, auto-inject on state change, auto-highlight on compute done, `handlePlayHand` highlights cards, `handleApplyDiscardSuggestion` highlights discards |
+| `src/index.css` | +50 | `.mod-status` badge, `.card--highlight-play` (green outline), `.card--highlight-discard` (red outline) |
+| `src/i18n/types.ts` | +7 | `modConnection` section with `connected`/`disconnected`/`connecting`/`error`/`lastUpdate` |
+| `src/i18n/locales/en.ts` | +8 | English: "Mod Connected", "Mod Disconnected", "Connecting...", "Connection Error", "Last update" |
+| `src/i18n/locales/zh-CN.ts` | +8 | Chinese: "Mod 已连接", "Mod 未连接", "连接中...", "连接错误", "上次更新" |
+| `src-tauri/tauri.conf.json` | +1 | CSP: `connect-src 'self' http://localhost:18888` |
+
+#### useModConnection Hook Design
+
+The hook manages a non-trivial state machine:
+
+```
+                  ┌──────────────┐
+                  │ disconnected │◀──────────────────────────────┐
+                  └──────┬───────┘                               │
+                         │ health check OK                       │
+                         ▼                                       │
+                  ┌──────────────┐    health check fails ×3      │
+                  │  connected   │───────────────────────────────┘
+                  └──────┬───────┘
+                         │
+                         │ start state polling (300ms)
+                         ▼
+                  ┌──────────────┐
+                  │ poll cycle   │
+                  │ ├─ fetch state│
+                  │ ├─ JSON compare│── no delta → skip
+                  │ └─ delta → setLastState()
+                  └──────────────┘
+```
+
+**Key design decisions**:
+
+1. **Delta detection via JSON string comparison**: `JSON.stringify(newState) !== prevStateRef.current`. Simple, reliable, avoids deep equality overhead on every poll cycle.
+2. **Health check decoupled from state poll**: Health check runs every 2s and manages connection state. State poll runs every 300ms only when connected. A failed state poll does NOT trigger disconnect — only the health check does. This prevents transient network jitter from flapping the connection status.
+3. **`statusRef` for health check closure**: The health check callback uses `statusRef` (not React `status` state) to determine whether to transition, preventing stale closure issues.
+4. **AbortSignal.timeout(1000ms)** on all fetches — no hanging requests.
+5. **Convenience methods are thin wrappers**: `highlightPlayCards(indices)` → `sendCommand({ type: 'highlight_play', payload: { indices } })`. This gives callers readable, type-safe APIs.
+
+#### App.tsx Integration — Three Critical Effects
+
+**Effect 1: Mod Auto-Inject** (`useEffect` watching `modConn.lastState` + `modConn.status`):
+- When the mod pushes new state: `gameState.injectSaveState(lastState)`
+- On first connection, auto-switches to Input tab
+- Clears highlights on every state change (cards may have been played/discarded)
+- Only injects when status is 'connected'
+
+**Effect 2: Auto-Highlight on Compute** (`useEffect` watching `search.status` + `search.result` + `modConn.status`):
+```typescript
+if (search.status === 'done' && search.result && modConn.status === 'connected') {
+  if (search.result !== lastHighlightedResultRef.current) {
+    lastHighlightedResultRef.current = search.result;
+    const bestPlay = search.result.optimalPlay;
+    if (bestPlay && bestPlay.playedCards.length > 0) {
+      const handCardIds = gameState.form.handCards.map(c => c.id);
+      const indices = bestPlay.playedCards
+        .map(pc => handCardIds.indexOf(pc.id))
+        .filter(i => i >= 0);
+      if (indices.length > 0) {
+        modConn.highlightPlayCards(indices);
+      }
+    }
+  }
+}
+```
+- Uses `lastHighlightedResultRef` to deduplicate — only highlights once per new result
+- Derives card indices from `optimalPlay.playedCards[].id` matched against `handCards[].id`
+- `ScoredPlay.playedCards` is `Card[]` (not indices), so index derivation is required
+
+**Effect 3: HandlePlayHand** (`useCallback`):
+- Calls `gameState.playHand(indices, score, handType)` — dispatches PLAY_HAND reducer
+- Calls `modConn.highlightPlayCards(indices)` — sends green highlights to game
+- Stays on Results tab (does NOT switch to Input) so highlights persist until mod detects new state
+
+---
+
+### 8.5 Bug Fix Record — Highlights Immediately Cleared
+
+**Bug**: After clicking "Play This Hand", the green highlights appeared and immediately vanished.
+
+**Root Cause**: `handlePlayHand` called `setTab('input')`, which triggered a tab-change `useEffect` that called `modConn.clearHighlights()`, canceling the `highlightPlayCards` command sent just milliseconds before.
+
+**Fix** (2 changes):
+1. Removed the tab-based `clearHighlights` `useEffect` entirely — highlights are now only cleared when new mod state arrives (via the auto-inject effect)
+2. Removed `setTab('input')` from `handlePlayHand` — user stays on Results tab after playing
+
+**Result**: Highlights persist in-game until the mod detects the state change (~300ms after user plays cards), then natural auto-clearing on next poll cycle.
+
+**Bug #2**: Auto-highlight effect used non-existent fields (`search.result.plays[0].playedIndices`).
+
+**Fix**: Changed to use correct `SearchResult` interface: `optimalPlay: ScoredPlay` with `playedCards: Card[]`. Indices derived by matching `playedCards[].id` against `handCards[].id`.
+
+---
+
+### 8.6 File-Level Change Matrix (v1.3-rc)
+
+#### New Files (8)
+
+| File | Lines | Category | Purpose |
+|------|-------|----------|---------|
+| `mod/balatro-calc/main.lua` | ~107 | Mod | Steammodded entry point, module wiring, server start, Game hooks |
+| `mod/balatro-calc/lib/json.lua` | ~188 | Mod | Pure-Lua JSON encoder/decoder |
+| `mod/balatro-calc/src/server.lua` | ~236 | Mod | Non-blocking HTTP server (luasocket TCP) |
+| `mod/balatro-calc/src/collector.lua` | ~427 | Mod | Game state reader: G.hand/G.jokers/G.deck/G.GAME → JSON |
+| `mod/balatro-calc/src/highlighter.lua` | ~91 | Mod | Card overlay renderer (love.graphics) |
+| `mod/balatro-calc/src/commands.lua` | ~40 | Mod | POST /api/command dispatcher |
+| `mod/balatro-calc/README.md` | ~50 | Mod | Installation + API docs + troubleshooting |
+| `src/engine/mod-protocol.ts` | 53 | Engine | Shared types: ModStateResponse, ModCommand, constants |
+| `src/hooks/useModConnection.ts` | 150 | Hooks | HTTP polling, delta detection, command sending |
+| `src/components/mod/ModConnectionIndicator.tsx` | 38 | UI | Connection status badge |
+
+#### Modified Files (8)
+
+| File | Δ Lines | Changes |
+|------|---------|---------|
+| `src/engine/save-parser.ts` | +4 | `roundScore?` + `scoreLog?` in `InjectedSaveData` |
+| `src/hooks/useGameState.ts` | +10 | `INJECT_SAVE_STATE` maps new mod-only fields |
+| `src/App.tsx` | +55 | Mod integration: auto-inject, auto-highlight, handlePlayHand/handleDiscard |
+| `src/index.css` | +50 | `.mod-status`, `.card--highlight-play/discard` |
+| `src/i18n/types.ts` | +7 | `modConnection` translation keys |
+| `src/i18n/locales/en.ts` | +8 | English mod connection strings |
+| `src/i18n/locales/zh-CN.ts` | +8 | Chinese mod connection strings |
+| `src-tauri/tauri.conf.json` | +1 | CSP: `connect-src http://localhost:18888` |
+
+---
+
+### 8.7 Design Decisions & Tradeoffs
+
+| Decision | Rationale | Tradeoff |
+|----------|-----------|----------|
+| HTTP polling vs WebSocket | Luasocket has TCP but no WebSocket library; polling at 300ms is sufficient for a turn-based card game | ~300ms latency for state sync (acceptable) |
+| Mod as server, Web as client | No extra process needed; browser can `fetch()` to localhost | Mod must bind a port (6-port fallback range) |
+| Delta detection via JSON string compare | Simple, O(n) on string length, no recursive deep-equal overhead | Redundant JSON.stringify on every poll (negligible for <10KB payloads) |
+| Non-blocking `settimeout(0)` | One connection per frame (60 req/s max) — 18× the needed throughput from 300ms polling | A burst of connections in one frame queues until next tick |
+| 0-based indices in protocol | Consistent with TypeScript conventions; Lua side converts to 1-based internally | Lua developers reading raw protocol may be confused |
+| Highlights clear on new state | Natural lifecycle: new state = cards changed = old highlights invalid | Brief (300ms) window where highlights may be stale after rapid game actions |
+| Auto-highlight on compute done | Reduces user actions: "Compute → look at game → play" vs "Compute → look at tool → find Play button → click → look at game" | User can't choose a non-optimal hand from the auto-highlight (they can still look at ResultsPanel for alternative plays) |
+
+---
+
+### 8.8 Verification
+
+- **TypeScript build**: `npm run build` — 0 errors, 0 warnings
+- **Test suite**: `npx vitest run` — 502 tests passed, 18 files, ~720ms
+- **Manual QA checklist**:
+  1. Start Balatro with mod → `curl http://localhost:18888/api/health` returns `{"status":"ok"}`
+  2. `curl http://localhost:18888/api/state` returns valid JSON matching in-game state
+  3. Open Web tool → ModConnectionIndicator turns green → form auto-fills
+  4. Click Compute → best hand cards highlighted green in-game
+  5. Click "Play This Hand" in ResultsPanel → highlights persist
+  6. Play highlighted cards in-game → ~300ms later, tool updates hand, highlights clear
+  7. Discard tab → Analyze → Apply Suggestion → discard cards highlighted red in-game
+  8. Close Balatro → tool indicator turns red → manual mode still fully functional
+
+---
+
+### 8.9 CSP & Security
+
+The Tauri CSP was extended to allow connections to the mod server:
+
+```json
+"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:18888"
+```
+
+This is safe because:
+- `localhost:18888` is only accessible from the local machine
+- The mod server only listens on 127.0.0.1 (loopback)
+- No external network access is granted
+- The mod processes no user data beyond the game state
+
+---
+
+*Document updated on 2026-05-29. v1.1.5 Architecture Hardening Sprint: Complete. v1.2-rc1 Phase 1: Delivered (502/502 tests passing). Round Session Tracker + Deck/Stake Presets: Delivered. Mod Bidirectional Bridge: Delivered.*
+
+*Balatro Calc — Version 1.3-rc — Steammodded Mod: Bidirectional Real-Time Bridge — Active.*

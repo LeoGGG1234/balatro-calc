@@ -7,6 +7,14 @@ import {
   HandType, CardEnhancement, CardEdition, Seal, Rank, Suit,
   BlindType,
 } from '../engine/types';
+
+// ─── Score Log ─────────────────────────────────────────────────
+
+export interface ScoreLogEntry {
+  handType: HandType;
+  score: number;
+  cardsPlayed: number;
+}
 import { getDefaultHandLevels } from '../engine/constants';
 import { getJokerRoundModifiers, getJokerModifiers } from '../engine/joker-data';
 import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, batchUpdateDeckCards, applyDeckPreset, buildAggregateFromCards } from '../engine/deck';
@@ -16,6 +24,8 @@ import type { InjectedSaveData } from '../engine/save-parser';
 import { createRng } from '../engine/rng';
 import { drawHand } from '../engine/run-simulator';
 import { recognizeHand } from '../engine/hand-evaluator';
+import type { DeckId, StakeId } from '../engine/deck-stake-data';
+import { ALL_DECKS, computeDeckStakeBase } from '../engine/deck-stake-data';
 
 // ─── Voucher / Boss Modifier Presets ──────────────────────────
 
@@ -28,12 +38,27 @@ export interface VoucherDef {
 }
 
 export const ALL_VOUCHERS: VoucherDef[] = [
+  // ── Form-affecting vouchers ──────────────────────────────
   { id: 'grabber', nameKey: 'shop.voucherNames.grabber', hands: 1 },
   { id: 'nacho_tong', nameKey: 'shop.voucherNames.nacho_tong', hands: 1 },
   { id: 'wasteful', nameKey: 'shop.voucherNames.wasteful', discards: 1 },
   { id: 'recyclomancy', nameKey: 'shop.voucherNames.recyclomancy', discards: 1 },
   { id: 'paint_brush', nameKey: 'shop.voucherNames.paint_brush', handSize: 1 },
   { id: 'palette', nameKey: 'shop.voucherNames.palette', handSize: 1 },
+  // ── Tracking-only vouchers (deck presets, shop effects) ──
+  { id: 'overstock', nameKey: 'shop.voucherNames.overstock' },
+  { id: 'overstock_plus', nameKey: 'shop.voucherNames.overstock_plus' },
+  { id: 'clearance_sale', nameKey: 'shop.voucherNames.clearance_sale' },
+  { id: 'liquidation', nameKey: 'shop.voucherNames.liquidation' },
+  { id: 'reroll_surplus', nameKey: 'shop.voucherNames.reroll_surplus' },
+  { id: 'reroll_glut', nameKey: 'shop.voucherNames.reroll_glut' },
+  { id: 'crystal_ball', nameKey: 'shop.voucherNames.crystal_ball' },
+  { id: 'omen_globe', nameKey: 'shop.voucherNames.omen_globe' },
+  { id: 'observatory', nameKey: 'shop.voucherNames.observatory' },
+  { id: 'telescope', nameKey: 'shop.voucherNames.telescope' },
+  { id: 'tarot_merchant', nameKey: 'shop.voucherNames.tarot_merchant' },
+  { id: 'planet_merchant', nameKey: 'shop.voucherNames.planet_merchant' },
+  { id: 'blank', nameKey: 'shop.voucherNames.blank' },
 ];
 
 export interface BossEffectDef {
@@ -150,6 +175,16 @@ export interface GameStateForm {
   seed: string | null;
   /** User-provided joker state override values (index → value). Auto-updated on discard. */
   jokerStateOverrides: Record<number, number>;
+  /** Cumulative score for the current round */
+  roundScore: number;
+  /** Per-hand score log for the current round */
+  scoreLog: ScoreLogEntry[];
+  /** Selected game deck (Red, Blue, Yellow, etc.) — drives form defaults. */
+  selectedDeck: DeckId | null;
+  /** Selected stake/difficulty (White, Red, Green, etc.). */
+  selectedStake: StakeId | null;
+  /** Maximum joker slots (default 7, modified by Black/Painted/Anaglyph deck). */
+  maxJokerSlots: number;
 }
 
 // ─── Actions ───────────────────────────────────────────────────
@@ -183,6 +218,10 @@ export type FormAction =
   | { type: 'SET_SEED'; seed: string | null }
   | { type: 'SET_JOKER_STATE_OVERRIDE'; index: number; value: number }
   | { type: 'APPLY_DISCARD_SUGGESTION'; discardIndices: number[] }
+  | { type: 'PLAY_HAND'; indices: number[]; score: number; handType: HandType }
+  | { type: 'NEW_ROUND' }
+  | { type: 'SELECT_DECK'; deckId: DeckId | null }
+  | { type: 'SELECT_STAKE'; stakeId: StakeId | null }
   | { type: 'INJECT_SAVE_STATE'; data: InjectedSaveData }
   | { type: 'RESET_FORM' };
 
@@ -222,6 +261,11 @@ function createInitialState(): GameStateForm {
     activeBossEffect: null,
     seed: null,
     jokerStateOverrides: {},
+    roundScore: 0,
+    scoreLog: [],
+    selectedDeck: null,
+    selectedStake: null,
+    maxJokerSlots: 7,
   };
 }
 
@@ -360,7 +404,7 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
       };
 
     case 'ADD_JOKER':
-      if (state.jokers.length >= 7) return state;
+      if (state.jokers.length >= state.maxJokerSlots) return state;
       return {
         ...state,
         jokers: [...state.jokers, { id: action.jokerId, edition: CardEdition.None }],
@@ -542,6 +586,70 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
       };
     }
 
+    case 'PLAY_HAND': {
+      const effectiveSize = computeEffectiveHandSize(state.handSizeBase, state.activeVouchers, state.jokers);
+      const newHandCards = state.handCards.map((c, i) =>
+        action.indices.includes(i) ? createFogCard() : c
+      );
+      // Remove fog cards beyond hand size (unlikely, but guard against)
+      const trimmed = newHandCards.slice(0, effectiveSize);
+
+      return {
+        ...state,
+        handCards: trimmed,
+        handsPlayed: state.handsPlayed + 1,
+        roundScore: state.roundScore + action.score,
+        scoreLog: [...state.scoreLog, {
+          handType: action.handType,
+          score: action.score,
+          cardsPlayed: action.indices.length,
+        }],
+      };
+    }
+
+    case 'NEW_ROUND':
+      return {
+        ...state,
+        handsPlayed: 0,
+        discardsUsed: 0,
+        isFinalHand: false,
+        roundScore: 0,
+        scoreLog: [],
+      };
+
+    case 'SELECT_DECK': {
+      const base = computeDeckStakeBase(action.deckId, state.selectedStake);
+      const deckDef = action.deckId ? ALL_DECKS.find(d => d.id === action.deckId) : null;
+      const nextDeckComposition = deckDef?.deckPreset
+        ? applyDeckPreset(deckDef.deckPreset)
+        : state.deckComposition;
+      return {
+        ...state,
+        selectedDeck: action.deckId,
+        maxHandsBase: base.maxHandsBase,
+        maxDiscardsBase: base.maxDiscardsBase,
+        handSizeBase: base.handSizeBase,
+        dollars: base.dollars,
+        activeVouchers: base.activeVouchers,
+        maxJokerSlots: base.maxJokerSlots,
+        deckComposition: nextDeckComposition,
+      };
+    }
+
+    case 'SELECT_STAKE': {
+      const base = computeDeckStakeBase(state.selectedDeck, action.stakeId);
+      return {
+        ...state,
+        selectedStake: action.stakeId,
+        maxHandsBase: base.maxHandsBase,
+        maxDiscardsBase: base.maxDiscardsBase,
+        handSizeBase: base.handSizeBase,
+        dollars: base.dollars,
+        activeVouchers: base.activeVouchers,
+        maxJokerSlots: base.maxJokerSlots,
+      };
+    }
+
     case 'INJECT_SAVE_STATE': {
       const d = action.data;
 
@@ -580,6 +688,8 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
         maxHandsBase: nextMaxHandsBase,
         maxDiscardsBase: nextMaxDiscardsBase,
         handSizeBase: nextHandSizeBase,
+        roundScore: d.roundScore ?? 0,
+        scoreLog: d.scoreLog ?? [],
       };
     }
 
@@ -746,6 +856,22 @@ export function useGameState() {
     dispatch({ type: 'APPLY_DISCARD_SUGGESTION', discardIndices });
   }, []);
 
+  const playHand = useCallback((indices: number[], score: number, handType: HandType) => {
+    dispatch({ type: 'PLAY_HAND', indices, score, handType });
+  }, []);
+
+  const newRound = useCallback(() => {
+    dispatch({ type: 'NEW_ROUND' });
+  }, []);
+
+  const selectDeck = useCallback((deckId: DeckId | null) => {
+    dispatch({ type: 'SELECT_DECK', deckId });
+  }, []);
+
+  const selectStake = useCallback((stakeId: StakeId | null) => {
+    dispatch({ type: 'SELECT_STAKE', stakeId });
+  }, []);
+
   const injectSaveState = useCallback((data: InjectedSaveData) => {
     dispatch({ type: 'INJECT_SAVE_STATE', data });
   }, []);
@@ -781,6 +907,10 @@ export function useGameState() {
     setSeed,
     setJokerStateOverride,
     applyDiscardSuggestion,
+    playHand,
+    newRound,
+    selectDeck,
+    selectStake,
     injectSaveState,
     reset,
     buildState,

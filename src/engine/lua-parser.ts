@@ -34,7 +34,7 @@ type LuaToken =
 
 // ─── Convenience API ──────────────────────────────────────────────
 
-export function parseLuaTableToJSON(luaText: string): any {
+export function parseLuaTableToJSON(luaText: string): unknown {
   const parser = new LuaParser(luaText);
   return parser.parseRoot();
 }

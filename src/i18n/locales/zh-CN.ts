@@ -290,6 +290,76 @@ const zhCN: Translations = {
     zany: '古怪小丑',
   },
 
+  roundHud: {
+    handsLeft: '出牌',
+    discardsLeft: '弃牌',
+    roundScore: '回合分数',
+    newRound: '新回合',
+    confirmNewRound: '确认新回合',
+  },
+
+  deckSelect: {
+    label: '牌组',
+    labelStake: '难度',
+    names: {
+      red: '红牌组',
+      blue: '蓝牌组',
+      yellow: '黄牌组',
+      green: '绿牌组',
+      black: '黑牌组',
+      magic: '魔法牌组',
+      nebula: '星云牌组',
+      ghost: '幽灵牌组',
+      abandoned: '废弃牌组',
+      checkered: '棋盘牌组',
+      zodiac: '黄道牌组',
+      painted: '彩绘牌组',
+      anaglyph: '浮雕牌组',
+      plasma: '等离子牌组',
+      erratic: '古怪牌组',
+    },
+    descriptions: {
+      red: '+1 弃牌次数',
+      blue: '+1 出牌次数',
+      yellow: '开局 +$10',
+      green: '无利息；每剩余1出牌得$2，每剩余1弃牌得$1',
+      black: '+1 小丑槽位，-1 出牌次数',
+      magic: '开局获得水晶球优惠券',
+      nebula: '开局获得望远镜优惠券，-1 消耗品槽位',
+      ghost: '开局获得预兆之球；商店出现光谱牌',
+      abandoned: '40张牌 — 无人头牌',
+      checkered: '26黑桃 + 26红心',
+      zodiac: '开局获得塔罗商人、星球商人、库存过剩优惠券',
+      painted: '+2 手牌上限，-1 小丑槽位',
+      anaglyph: '开局获得空白优惠券，-1 小丑槽位',
+      plasma: '分数筹码与倍率平衡（暂未实现）',
+      erratic: '随机牌组 — 需手动配置',
+    },
+  },
+
+  stake: {
+    names: {
+      white: '白注',
+      red: '红注',
+      green: '绿注',
+      black: '黑注',
+      blue: '蓝注',
+      purple: '紫注',
+      orange: '橙注',
+      gold: '金注',
+    },
+    descriptions: {
+      white: '基础难度',
+      red: '小盲注无奖励金',
+      green: '底注分数增长更快',
+      black: '小丑牌可能为永恒',
+      blue: '-1 弃牌次数',
+      purple: '底注分数增长更快',
+      orange: '卡包价格 +$1',
+      gold: '小丑牌可能为租赁或易腐',
+    },
+  },
+
   results: {
     playTheseCards: '打出这些牌',
     held: '保留',
@@ -306,6 +376,7 @@ const zhCN: Translations = {
     vsBlind: 'vs 盲注',
     score: '分数',
     handType2: '牌型',
+    playThisHand: '打出这手牌',
   },
 
   states: {
@@ -355,6 +426,10 @@ const zhCN: Translations = {
       crystal_ball: '水晶球',
       omen_globe: '预兆之球',
       observatory: '天文台',
+      telescope: '望远镜',
+      tarot_merchant: '塔罗商人',
+      planet_merchant: '星球商人',
+      blank: '空白',
     },
     bossEffectNames: {
       the_water: '水',
@@ -440,6 +515,14 @@ const zhCN: Translations = {
     applySuggestion: '应用建议',
     applyTooltip: '将此弃牌建议应用到当前手牌',
     applyDisabled: '无剩余弃牌次数或Boss禁止弃牌',
+  },
+
+  modConnection: {
+    connected: 'Mod 已连接',
+    disconnected: 'Mod 未连接',
+    connecting: '连接中...',
+    error: '连接错误',
+    lastUpdate: '上次更新',
   },
 
   saveImport: {

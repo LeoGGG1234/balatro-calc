@@ -2237,3 +2237,295 @@ input, select { font-family: inherit; }
   color: var(--accent-red, #fc8181);
   background: rgba(252, 129, 129, 0.1);
 }
+
+/* ─── Round HUD ──────────────────────────────────────────────── */
+
+.round-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--card-bg, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+}
+
+.round-hud__stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.round-hud__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 70px;
+}
+
+.round-hud__stat--wide {
+  min-width: 160px;
+  flex: 1;
+}
+
+.round-hud__label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.round-hud__value {
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.round-hud__value--score {
+  font-size: 1.05rem;
+  color: var(--accent-yellow, #f6e05e);
+}
+
+.round-hud__target {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 400;
+}
+
+.round-hud__percent {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 400;
+}
+
+.round-hud__bar {
+  height: 3px;
+  background: var(--border-color, #334155);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.round-hud__bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.round-hud__bar-fill--hands {
+  background: var(--accent-blue, #63b3ed);
+}
+
+.round-hud__bar-fill--discards {
+  background: var(--accent-purple, #b794f4);
+}
+
+.round-hud__bar-fill--score {
+  background: var(--accent-yellow, #f6e05e);
+}
+
+.round-hud__bar-fill--cleared {
+  background: var(--accent-green, #48bb78);
+}
+
+.round-hud__separator {
+  width: 1px;
+  height: 32px;
+  background: var(--border-color, #334155);
+}
+
+.round-hud__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.round-hud__btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 5px;
+  background: var(--card-bg, #1e293b);
+  color: var(--text-primary, #e2e8f0);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.round-hud__btn:hover {
+  background: var(--hover-bg, #334155);
+}
+
+.round-hud__btn--new {
+  border-color: var(--accent-blue, #63b3ed);
+  color: var(--accent-blue, #63b3ed);
+}
+
+.round-hud__btn--new:hover {
+  background: rgba(99, 179, 237, 0.15);
+}
+
+.round-hud__btn--confirm {
+  border-color: var(--accent-green, #48bb78);
+  color: var(--accent-green, #48bb78);
+}
+
+.round-hud__btn--confirm:hover {
+  background: rgba(72, 187, 120, 0.15);
+}
+
+.round-hud__btn--cancel {
+  border-color: var(--text-muted, #64748b);
+  color: var(--text-muted, #64748b);
+}
+
+/* ─── Deck & Stake Selectors ─────────────────────────────────── */
+
+.deck-stake-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.deck-stake-field {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deck-stake-select {
+  width: 100%;
+}
+
+.deck-stake-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted, #8b9dc3);
+  line-height: 1.3;
+  min-height: 1.3em;
+}
+
+/* ─── Play Hand Button ──────────────────────────────────────── */
+
+.results__play-hand {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-play-hand {
+  padding: 10px 20px;
+  border: 2px solid var(--accent-green, #48bb78);
+  border-radius: 6px;
+  background: rgba(72, 187, 120, 0.1);
+  color: var(--accent-green, #48bb78);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn-play-hand:hover:not(:disabled) {
+  background: rgba(72, 187, 120, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-play-hand:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.results__no-hands {
+  font-size: 0.82rem;
+  color: var(--accent-red, #fc8181);
+}
+
+/* ─── Fog Card Enhancement ──────────────────────────────────── */
+
+.hand-card-cell--fog {
+  position: relative;
+  border-radius: 8px;
+  outline: 2px dashed rgba(148, 163, 184, 0.5);
+  outline-offset: 2px;
+}
+
+.hand-card-cell__reveal {
+  display: block;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--accent-blue, #63b3ed);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card--fog {
+  border-style: dashed !important;
+}
+
+/* ─── Mod Connection Indicator ─────────────────────────────── */
+
+.mod-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.mod-status--connected {
+  background: rgba(72, 187, 120, 0.15);
+  color: #48bb78;
+}
+
+.mod-status--disconnected {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.mod-status--connecting {
+  background: rgba(246, 224, 94, 0.12);
+  color: #f6e05e;
+}
+
+.mod-status--error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fc8181;
+}
+
+.mod-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.mod-status__ago {
+  opacity: 0.65;
+  font-weight: 400;
+}
+
+/* ─── Card Highlight (web tool mirror of Lua highlighter) ─── */
+
+.card--highlight-play {
+  outline: 2px solid #48bb78;
+  outline-offset: -2px;
+  border-color: #48bb78 !important;
+}
+
+.card--highlight-discard {
+  outline: 2px solid #ef4444;
+  outline-offset: -2px;
+  border-color: #ef4444 !important;
+}

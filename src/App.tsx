@@ -1,14 +1,18 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useI18n } from './i18n/context';
+import { HandType } from './engine/types';
+import type { SearchResult } from './engine/types';
 import { useGameState } from './hooks/useGameState';
 import { useSearch } from './hooks/useSearch';
 import { useDiscardAnalysis } from './hooks/useDiscardAnalysis';
 import { useRunSimulation } from './hooks/useRunSimulation';
+import { useModConnection } from './hooks/useModConnection';
 import { GameStateForm } from './components/input/GameStateForm';
 import { ResultsPanel } from './components/results/ResultsPanel';
 import { DiscardPanel } from './components/results/DiscardPanel';
 import { ShopPanel } from './components/shop/ShopPanel';
 import { RunSimPanel } from './components/run-sim/RunSimPanel';
+import { ModConnectionIndicator } from './components/mod/ModConnectionIndicator';
 
 type Tab = 'input' | 'discard' | 'results' | 'shop' | 'run-sim';
 
@@ -19,6 +23,50 @@ function App() {
   const search = useSearch();
   const discardAnalysis = useDiscardAnalysis();
   const runSim = useRunSimulation();
+  const modConn = useModConnection();
+
+  // Track whether we've done the initial state injection from mod
+  const modInjectedRef = useRef(false);
+  // Prevent duplicate auto-highlights for the same search result
+  const lastHighlightedResultRef = useRef<SearchResult | null>(null);
+
+  // ── Mod auto-inject ────────────────────────────────────────────
+  // When the mod pushes new state, inject it into the form.
+  useEffect(() => {
+    if (modConn.lastState && modConn.status === 'connected') {
+      gameState.injectSaveState(modConn.lastState);
+      // Only switch to input tab on first connection, not on every poll
+      if (!modInjectedRef.current) {
+        modInjectedRef.current = true;
+        setTab('input');
+      }
+      // Clear highlights when state changes (cards may have been played/discarded)
+      modConn.clearHighlights();
+    }
+    if (modConn.status === 'disconnected') {
+      modInjectedRef.current = false;
+    }
+  }, [modConn.lastState, modConn.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-highlight best hand when compute finishes ──────────────
+  useEffect(() => {
+    if (search.status === 'done' && search.result && modConn.status === 'connected') {
+      // Only highlight once per new result
+      if (search.result !== lastHighlightedResultRef.current) {
+        lastHighlightedResultRef.current = search.result;
+        const bestPlay = search.result.optimalPlay;
+        if (bestPlay && bestPlay.playedCards.length > 0) {
+          const handCardIds = gameState.form.handCards.map(c => c.id);
+          const indices = bestPlay.playedCards
+            .map(pc => handCardIds.indexOf(pc.id))
+            .filter(i => i >= 0);
+          if (indices.length > 0) {
+            modConn.highlightPlayCards(indices);
+          }
+        }
+      }
+    }
+  }, [search.status, search.result, modConn.status, modConn.highlightPlayCards, gameState.form.handCards]);
 
   const handleJokerStateChange = useCallback((index: number, value: number) => {
     gameState.setJokerStateOverride(index, value);
@@ -26,7 +74,18 @@ function App() {
 
   const handleApplyDiscardSuggestion = useCallback((discardIndices: number[]) => {
     gameState.applyDiscardSuggestion(discardIndices);
-  }, [gameState.applyDiscardSuggestion]);
+    modConn.highlightDiscardCards(discardIndices);
+  }, [gameState.applyDiscardSuggestion, modConn]);
+
+  const handlePlayHand = useCallback((indices: number[], score: number, handType: HandType) => {
+    gameState.playHand(indices, score, handType);
+    modConn.highlightPlayCards(indices);
+    // Stay on results tab so highlights persist until mod detects new state
+  }, [gameState.playHand, modConn]);
+
+  const handleNewRound = useCallback(() => {
+    gameState.newRound();
+  }, [gameState.newRound]);
 
   const handleCompute = useCallback(() => {
     search.search(gameState.form, {
@@ -96,6 +155,10 @@ function App() {
               {runSim.status === 'running' ? ' ...' : ''}
             </button>
           </div>
+          <ModConnectionIndicator
+            status={modConn.status}
+            lastPollTime={modConn.lastPollTime}
+          />
           <button
             className="lang-toggle"
             onClick={toggleLang}
@@ -117,6 +180,9 @@ function App() {
             onUpdateCard={gameState.setHandCard}
             onParseNotation={gameState.setHandCards}
             onInjectSave={gameState.injectSaveState}
+            onNewRound={handleNewRound}
+            onSelectDeck={gameState.selectDeck}
+            onSelectStake={gameState.selectStake}
             onAddJoker={gameState.addJoker}
             onRemoveJoker={gameState.removeJoker}
             onReorderJokers={gameState.reorderJokers}
@@ -160,7 +226,12 @@ function App() {
             )}
 
             {search.status === 'done' && search.result && (
-              <ResultsPanel result={search.result} />
+              <ResultsPanel
+                result={search.result}
+                handCards={gameState.form.handCards}
+                handsRemaining={gameState.effectiveMaxHands - gameState.form.handsPlayed}
+                onPlayHand={handlePlayHand}
+              />
             )}
 
             {search.status === 'error' && (
