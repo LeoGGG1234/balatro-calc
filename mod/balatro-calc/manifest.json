@@ -1,0 +1,15 @@
+{
+    "id": "balatro_calc",
+    "name": "Balatro Calc",
+    "display_name": "Balatro Calc",
+    "author": ["Balatro Calc Contributors"],
+    "description": "Real-time bidirectional bridge between Balatro and the Balatro Calc web tool. Auto-syncs game state and highlights optimal cards.",
+    "version": "0.1.0",
+    "prefix": "bcalc",
+    "main_file": "main.lua",
+    "priority": 0,
+    "badge_colour": "4CAF50",
+    "badge_text_colour": "FFFFFF",
+    "dependencies": [],
+    "provides": ["balatro_calc=0.1.0"]
+}

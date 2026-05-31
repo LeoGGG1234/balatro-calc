@@ -122,17 +122,17 @@ export function useModConnection(): UseModConnectionReturn {
   }, []);
 
   const highlightPlayCards = useCallback(
-    (indices: number[]) => sendCommand({ type: 'highlight_play', payload: { indices } }),
+    (indices: number[]) => sendCommand({ type: 'highlight_play', payload: { indices } }).catch(() => {}),
     [sendCommand],
   );
 
   const highlightDiscardCards = useCallback(
-    (indices: number[]) => sendCommand({ type: 'highlight_discard', payload: { indices } }),
+    (indices: number[]) => sendCommand({ type: 'highlight_discard', payload: { indices } }).catch(() => {}),
     [sendCommand],
   );
 
   const clearHighlights = useCallback(
-    () => sendCommand({ type: 'clear_highlights' }),
+    () => sendCommand({ type: 'clear_highlights' }).catch(() => {}),
     [sendCommand],
   );
 

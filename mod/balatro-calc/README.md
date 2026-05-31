@@ -8,7 +8,7 @@ The mod starts a lightweight HTTP server inside Balatro that exposes your live g
 
 ## Requirements
 
-- [Steammodded](https://github.com/Steamopollys/Steamodded) (includes luasocket)
+- [Steamodded](https://github.com/Steamodded/smods) (includes luasocket)
 - Balatro (official/vanilla, any platform that runs Steammodded)
 
 ## Installation

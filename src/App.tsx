@@ -13,6 +13,7 @@ import { DiscardPanel } from './components/results/DiscardPanel';
 import { ShopPanel } from './components/shop/ShopPanel';
 import { RunSimPanel } from './components/run-sim/RunSimPanel';
 import { ModConnectionIndicator } from './components/mod/ModConnectionIndicator';
+import { ModDashboard } from './components/mod/ModDashboard';
 
 type Tab = 'input' | 'discard' | 'results' | 'shop' | 'run-sim';
 
@@ -171,7 +172,20 @@ function App() {
 
       {/* Main Content */}
       <main className="app-main">
-        {tab === 'input' && (
+        {tab === 'input' && modConn.status === 'connected' && (
+          <ModDashboard
+            form={gameState.form}
+            effectiveHands={gameState.effectiveMaxHands}
+            effectiveDiscards={gameState.effectiveMaxDiscards}
+            effectiveHandSize={gameState.effectiveHandSize}
+            modConn={modConn}
+            computing={search.status === 'computing'}
+            onCompute={handleCompute}
+            onAnalyzeDiscards={() => { handleAnalyzeDiscards(); setTab('discard'); }}
+          />
+        )}
+
+        {tab === 'input' && modConn.status !== 'connected' && (
           <GameStateForm
             form={gameState.form}
             effectiveMaxHands={gameState.effectiveMaxHands}

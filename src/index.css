@@ -2529,3 +2529,290 @@ input, select { font-family: inherit; }
   outline-offset: -2px;
   border-color: #ef4444 !important;
 }
+
+/* ─── Mod Dashboard ──────────────────────────────────────── */
+
+.mod-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px 0;
+}
+
+.mod-dashboard__status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  flex-wrap: wrap;
+}
+
+.mod-dashboard__status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mod-dashboard__status-item--wide {
+  flex: 1;
+  min-width: 160px;
+}
+
+.mod-dashboard__status-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mod-dashboard__status-value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.mod-dashboard__status-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border-primary);
+}
+
+.mod-dashboard__progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mod-dashboard__progress-fill {
+  height: 100%;
+  background: var(--accent-yellow);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.mod-dashboard__progress-fill--done {
+  background: var(--accent-green);
+}
+
+.mod-dashboard__main {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+
+.mod-dashboard__left,
+.mod-dashboard__right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mod-dashboard__section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.mod-dashboard__section-title {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mod-dashboard__hand-cards {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mod-dashboard__jokers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mod-dashboard__joker {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+
+.mod-dashboard__joker-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.mod-dashboard__joker-edition {
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-bg-red);
+  color: var(--accent-red);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.mod-dashboard__joker-state {
+  font-size: 0.74rem;
+  color: var(--accent-yellow);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.mod-dashboard__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mod-dashboard__tag {
+  font-size: 0.74rem;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.mod-dashboard__tag--boss {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.mod-dashboard__tag--debuff {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.mod-dashboard__hand-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mod-dashboard__hand-level {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.mod-dashboard__hand-level-name {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.mod-dashboard__hand-level-lvl {
+  font-size: 0.78rem;
+  color: var(--accent-yellow);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.mod-dashboard__empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.mod-dashboard__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+}
+
+.mod-dashboard__btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.mod-dashboard__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mod-dashboard__btn--primary {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.mod-dashboard__btn--primary:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.mod-dashboard__btn--secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.mod-dashboard__btn--secondary:hover:not(:disabled) {
+  background: var(--border-primary);
+}
+
+.mod-dashboard__hint {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* Shop section in ModDashboard */
+
+.mod-dashboard__section--shop {
+  border-color: var(--accent-yellow);
+}
+
+.mod-dashboard__shop-category {
+  margin-bottom: 6px;
+}
+
+.mod-dashboard__shop-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.mod-dashboard__shop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.mod-dashboard__shop-price {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent-yellow);
+}

@@ -87,6 +87,14 @@ local VOUCHER_INFO = {
 
 -- ─── Internal helpers ──────────────────────────────────────────────
 
+-- Ensure empty tables serialize as JSON arrays, not objects
+local function mark_as_array(t)
+  if t and type(t) == 'table' and next(t) == nil then
+    t.__json_array = true
+  end
+  return t
+end
+
 local function safe_get(tbl, key, default)
   if tbl and type(tbl) == 'table' then
     local v = rawget(tbl, key)
@@ -186,15 +194,21 @@ local function collect_jokers()
 
     jokers[#jokers + 1] = { id = joker_id, edition = edition }
 
-    -- Extract state override (for Castle, Green Joker, Yorick, etc.)
+    -- Extract state override for state-driven jokers.
+    -- Priority: extra_value > extra.mult/chips > counter > config.extra
     local override_val = nil
-    local extra = ability.extra_value
-    if type(extra) == 'number' then
-      override_val = extra
-    else
-      local counter = ability.counter
-      if type(counter) == 'number' then
-        override_val = counter
+    if type(ability.extra_value) == 'number' then
+      override_val = ability.extra_value
+    elseif type(ability.extra) == 'table' then
+      -- Hologram/Constellation/Campfire store xMult in extra.mult
+      override_val = ability.extra.mult or ability.extra.chips
+      if override_val ~= nil and type(override_val) ~= 'number' then
+        override_val = nil
+      end
+    end
+    if override_val == nil then
+      if type(ability.counter) == 'number' then
+        override_val = ability.counter
       elseif card.config and type(card.config.extra) == 'number' then
         override_val = card.config.extra
       end
@@ -217,16 +231,14 @@ local function collect_hand_levels()
     FlushHouse = 1, FlushFive = 1,
   }
 
-  -- First try: check consumable area for planet cards (most reliable)
-  local consumables = G.consumeables
-  if consumables and consumables.cards then
-    for _, card in ipairs(consumables.cards) do
-      if card and card.ability and card.ability.name then
-        local hand_key = PLANET_TO_HAND[card.ability.name]
-        if hand_key then
-          local lvl = safe_number(card.ability.level, 1)
-          if lvl > 1 then levels[hand_key] = lvl end
-        end
+  -- Read from G.GAME.hands (authoritative source, persists after planets are used)
+  local hands = G.GAME and G.GAME.hands
+  if hands then
+    for display_name, hand_data in pairs(hands) do
+      local hand_key = HAND_NAME_MAP[display_name]
+      if hand_key and type(hand_data) == 'table' then
+        local lvl = safe_number(hand_data.level, 1)
+        if lvl > 1 then levels[hand_key] = lvl end
       end
     end
   end
@@ -374,6 +386,72 @@ local function compute_base_round_params(active_vouchers)
   }
 end
 
+-- ─── Shop data ────────────────────────────────────────────────────
+
+local function collect_shop()
+  local shop = G.shop
+  if not shop then return nil end
+
+  local data = {}
+
+  -- Jokers for sale
+  if shop.cards and #shop.cards > 0 then
+    local jokers = {}
+    for _, card in ipairs(shop.cards) do
+      local ability = card.ability or {}
+      local joker_id = ability.key or 'unknown'
+      if type(joker_id) == 'string' and joker_id:sub(1, 2) == 'j_' then
+        joker_id = joker_id:sub(3)
+      end
+      jokers[#jokers + 1] = {
+        id = joker_id,
+        price = safe_number(card.sell_cost or card.cost, 0),
+        edition = EDITION_MAP[ability['set']] or 'none',
+      }
+    end
+    data.jokers = jokers
+  end
+
+  -- Voucher for sale
+  if shop.voucher then
+    local v_ability = shop.voucher.ability or {}
+    local v_key = v_ability.key or ''
+    local v_id = VOUCHER_KEY_MAP[v_key] or v_key
+    data.voucher = {
+      id = v_id,
+      price = safe_number(shop.voucher.cost or shop.voucher.sell_cost, 0),
+    }
+  end
+
+  -- Booster packs
+  if shop.packs and #shop.packs > 0 then
+    local packs = {}
+    for _, pack in ipairs(shop.packs) do
+      packs[#packs + 1] = {
+        type = pack.kind or pack.type or 'unknown',
+        price = safe_number(pack.sell_cost or pack.cost, 0),
+        size = safe_number(pack.size or pack.config_size, 0),
+      }
+    end
+    data.boosters = packs
+  end
+
+  -- Consumable slot (tarot/planet card)
+  if shop.consumable then
+    local cons = shop.consumable
+    local cons_ability = cons.ability or {}
+    data.consumable = {
+      id = cons_ability.key or cons_ability.name or 'unknown',
+      price = safe_number(cons.sell_cost or cons.cost, 0),
+    }
+  end
+
+  -- Reroll cost
+  data.rerollCost = safe_number(shop.reroll_cost or shop.re_roll_cost, 5)
+
+  return data
+end
+
 -- ─── Main collect function ─────────────────────────────────────────
 
 function collector.collect()
@@ -393,16 +471,21 @@ function collector.collect()
   local vouchers = collect_active_vouchers()
   local boss_effect = collect_boss_effect(blind_type, blind_key)
   local base_params = compute_base_round_params(vouchers)
+  local shop_data = collect_shop()
 
-  local dollars = safe_number(current_round.dollars, 0)
+  -- Try G.GAME.dollars first (global, more reliable), fall back to current_round.dollars
+  local dollars = safe_number(G.GAME.dollars, nil)
+  if dollars == nil or dollars == 0 then
+    dollars = safe_number(current_round.dollars, 0)
+  end
   local ante = safe_number(round_resets.ante, 1)
   local hands_played = safe_number(current_round.hands_played, 0)
   local discards_used = safe_number(current_round.discards_used, 0)
   local seed = current_round.seed
 
   return {
-    handCards = hand_cards,
-    jokers = jokers,
+    handCards = mark_as_array(hand_cards),
+    jokers = mark_as_array(jokers),
     handLevels = hand_levels,
     deckComposition = deck,
     dollars = dollars,
@@ -411,15 +494,16 @@ function collector.collect()
     discardsUsed = discards_used,
     blindType = blind_type,
     blindChips = blind_chips,
-    blindDebuffedRanks = debuff_ranks,
-    blindDebuffedSuits = debuff_suits,
+    blindDebuffedRanks = mark_as_array(debuff_ranks),
+    blindDebuffedSuits = mark_as_array(debuff_suits),
     seed = type(seed) == 'string' and seed or nil,
     jokerStateOverrides = joker_overrides,
-    activeVouchers = vouchers,
+    activeVouchers = mark_as_array(vouchers),
     activeBossEffect = boss_effect,
     maxHandsBase = base_params.maxHandsBase,
     maxDiscardsBase = base_params.maxDiscardsBase,
     handSizeBase = base_params.handSizeBase,
+    shop = shop_data,
   }
 end
 

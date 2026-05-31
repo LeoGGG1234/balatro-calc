@@ -181,7 +181,7 @@ Balatro (Lua/Steammodded)          Web Tool (React/TypeScript)
   Green/Red card highlights         Auto-filled form state
 ```
 
-**Requirements:** [Steammodded](https://github.com/Steamopollys/Steamodded) (includes luasocket), Balatro (official/vanilla). Open the web tool in any browser — the connection indicator turns green when the mod is detected.
+**Requirements:** [Steamodded](https://github.com/Steamodded/smods) (includes luasocket), Balatro (official/vanilla). Open the web tool in any browser — the connection indicator turns green when the mod is detected.
 
 ---
 

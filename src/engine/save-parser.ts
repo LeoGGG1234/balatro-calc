@@ -59,6 +59,8 @@ export interface InjectedSaveData {
   roundScore?: number;
   /** Per-hand score log (from mod live sync) */
   scoreLog?: import('../hooks/useGameState').ScoreLogEntry[];
+  /** Real shop data (from mod live sync, only when in shop) */
+  shop?: import('./mod-protocol').ModShopData;
 }
 
 // ─── Enhancement / Edition / Seal mapping tables ─────────────────

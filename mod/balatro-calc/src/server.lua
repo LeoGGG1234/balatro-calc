@@ -3,8 +3,6 @@
 -- Called every frame via Game.update hook.
 -- Handles one connection per tick (adequate for 300ms polling).
 
-local json = nil  -- Injected after module load
-
 local server = {}
 local tcp_server = nil
 local collector_fn = nil
@@ -38,7 +36,7 @@ local function build_response(status_code, body, content_type)
 end
 
 local function json_response(status_code, data)
-  local body = json.encode(data)
+  local body = server.json.encode(data)
   return build_response(status_code, body, 'application/json')
 end
 
@@ -101,7 +99,7 @@ local function handle_state()
     return error_response(500, 'Failed to collect game state: ' .. tostring(result))
   end
 
-  return build_response(200, json.encode(result), 'application/json')
+  return build_response(200, server.json.encode(result), 'application/json')
 end
 
 local function handle_command(body)
@@ -109,7 +107,7 @@ local function handle_command(body)
     return error_response(400, 'Empty request body')
   end
 
-  local cmd = json.decode(body)
+  local cmd = server.json.decode(body)
   if not cmd or not cmd.type then
     return error_response(400, 'Invalid command: missing type field')
   end

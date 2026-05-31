@@ -9,7 +9,9 @@ local function escape_string(s)
 end
 
 local function is_array(t)
-  if next(t) == nil then return false end -- empty table → object
+  if next(t) == nil then
+    return t.__json_array == true
+  end
   local max_idx = 0
   local count = 0
   for k, _ in pairs(t) do
@@ -20,6 +22,10 @@ local function is_array(t)
     if k > max_idx then max_idx = k end
   end
   return max_idx == count
+end
+
+function json.empty_array()
+  return { __json_array = true }
 end
 
 local function encode_value(v)

@@ -21,6 +21,7 @@ import { createStandardDeck, addCardToDeck, removeCardFromDeck, updateDeckCard, 
 import type { DeckCardSlot, DeckCardFilter } from '../engine/types';
 import type { DeckPreset } from '../engine/deck';
 import type { InjectedSaveData } from '../engine/save-parser';
+import type { ModShopData } from '../engine/mod-protocol';
 import { createRng } from '../engine/rng';
 import { drawHand } from '../engine/run-simulator';
 import { recognizeHand } from '../engine/hand-evaluator';
@@ -185,6 +186,8 @@ export interface GameStateForm {
   selectedStake: StakeId | null;
   /** Maximum joker slots (default 7, modified by Black/Painted/Anaglyph deck). */
   maxJokerSlots: number;
+  /** Real shop data from the mod (undefined when not in shop or no mod connected). */
+  shop?: ModShopData;
 }
 
 // ─── Actions ───────────────────────────────────────────────────
@@ -653,14 +656,22 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
     case 'INJECT_SAVE_STATE': {
       const d = action.data;
 
+      // Normalize: Lua empty tables serialize as {} (object), but TS expects [] (array)
+      const normalizeArr = <T>(v: T): T => {
+        if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0) {
+          return [] as unknown as T;
+        }
+        return v;
+      };
+
       // Build fresh deck composition with aggregate counts
-      const deckCards = d.deckComposition.cards;
-      const freshDeck: DeckComposition = deckCards
+      const deckCards = normalizeArr(d.deckComposition.cards);
+      const freshDeck: DeckComposition = deckCards && deckCards.length > 0
         ? { ...buildAggregateFromCards(deckCards), cards: deckCards }
         : d.deckComposition;
 
       // Sync global environment fields when present in injected data
-      const nextVouchers = d.activeVouchers ?? state.activeVouchers;
+      const nextVouchers = normalizeArr(d.activeVouchers) as string[] ?? state.activeVouchers;
       const nextBossEffect = d.activeBossEffect !== undefined ? d.activeBossEffect : state.activeBossEffect;
       const nextMaxHandsBase = d.maxHandsBase ?? state.maxHandsBase;
       const nextMaxDiscardsBase = d.maxDiscardsBase ?? state.maxDiscardsBase;
@@ -668,8 +679,8 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
 
       return {
         ...state,
-        handCards: d.handCards,
-        jokers: d.jokers,
+        handCards: normalizeArr(d.handCards),
+        jokers: normalizeArr(d.jokers),
         handLevels: d.handLevels,
         deckComposition: freshDeck,
         dollars: d.dollars,
@@ -678,18 +689,19 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
         discardsUsed: d.discardsUsed,
         blindType: d.blindType,
         blindChips: d.blindChips,
-        blindDebuffedRanks: d.blindDebuffedRanks,
-        blindDebuffedSuits: d.blindDebuffedSuits,
+        blindDebuffedRanks: normalizeArr(d.blindDebuffedRanks),
+        blindDebuffedSuits: normalizeArr(d.blindDebuffedSuits),
         seed: d.seed,
         jokerStateOverrides: d.jokerStateOverrides,
         isFinalHand: false,
-        activeVouchers: nextVouchers,
+        activeVouchers: normalizeArr(nextVouchers),
         activeBossEffect: nextBossEffect,
         maxHandsBase: nextMaxHandsBase,
         maxDiscardsBase: nextMaxDiscardsBase,
         handSizeBase: nextHandSizeBase,
         roundScore: d.roundScore ?? 0,
-        scoreLog: d.scoreLog ?? [],
+        scoreLog: normalizeArr(d.scoreLog) ?? [],
+        shop: d.shop,
       };
     }
 

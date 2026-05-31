@@ -7,6 +7,38 @@
 import type { InjectedSaveData } from './save-parser';
 import type { ScoreLogEntry } from '../hooks/useGameState';
 
+// ─── Shop data (collected from G.shop) ──────────────────────────────
+
+export interface ModShopJoker {
+  id: string;
+  price: number;
+  edition: string;
+}
+
+export interface ModShopVoucher {
+  id: string;
+  price: number;
+}
+
+export interface ModShopBooster {
+  type: string;
+  price: number;
+  size: number;
+}
+
+export interface ModShopConsumable {
+  id: string;
+  price: number;
+}
+
+export interface ModShopData {
+  jokers?: ModShopJoker[];
+  voucher?: ModShopVoucher;
+  boosters?: ModShopBooster[];
+  consumable?: ModShopConsumable;
+  rerollCost?: number;
+}
+
 // ─── Game → Tool (GET /api/state response) ─────────────────────────
 
 export interface ModStateResponse extends InjectedSaveData {
@@ -14,6 +46,8 @@ export interface ModStateResponse extends InjectedSaveData {
   roundScore: number;
   /** Per-hand score log for the current round */
   scoreLog: ScoreLogEntry[];
+  /** Real shop data from the game (undefined when not in shop) */
+  shop?: ModShopData;
 }
 
 // ─── Tool → Game (POST /api/command body) ──────────────────────────
