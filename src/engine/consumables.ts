@@ -369,23 +369,41 @@ export function applyPlanet(
 /**
  * Apply any consumable (tarot or planet) to the game state.
  * Dispatches to applyTarot or applyPlanet based on type.
+ * The consumed card is removed from heldConsumables in the returned state.
  */
 export function applyConsumable(
   consumable: HeldConsumable,
   state: GameState,
   targetCardIndices?: number[],
 ): ConsumableResult {
+  let result: ConsumableResult;
+
   if (consumable.type === 'planet') {
-    return applyPlanet(consumable.id, state);
+    result = applyPlanet(consumable.id, state);
+  } else if (consumable.type === 'tarot') {
+    result = applyTarot(consumable.id, state, targetCardIndices);
+  } else {
+    return {
+      newState: state,
+      description: `Consumable type ${consumable.type} not modeled`,
+      descriptionZh: `消耗牌类型 ${consumable.type} 未建模`,
+    };
   }
-  if (consumable.type === 'tarot') {
-    return applyTarot(consumable.id, state, targetCardIndices);
+
+  // Remove the used consumable from the returned state
+  if (result.newState.heldConsumables && result.newState !== state) {
+    const idx = result.newState.heldConsumables.findIndex(
+      hc => hc.id === consumable.id && hc.type === consumable.type,
+    );
+    if (idx >= 0) {
+      result.newState.heldConsumables = [
+        ...result.newState.heldConsumables.slice(0, idx),
+        ...result.newState.heldConsumables.slice(idx + 1),
+      ];
+    }
   }
-  return {
-    newState: state,
-    description: `Consumable type ${consumable.type} not modeled`,
-    descriptionZh: `消耗牌类型 ${consumable.type} 未建模`,
-  };
+
+  return result;
 }
 
 // ─── State Cloning ─────────────────────────────────────────────────

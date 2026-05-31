@@ -9,6 +9,7 @@ import type { ScoreOptions } from './scorer';
 import { getHandBaseChips, getHandBaseMult, HAND_DEFINITIONS } from './constants';
 import { combinations } from './combo-utils';
 import { computeDiscardEV, buildAvailableCardPool } from './strategy-evaluator';
+import { createRng } from './rng';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -470,9 +471,10 @@ export function analyzeDiscardsMC(
   const refined: MCDiscardOption[] = [];
 
   for (const candidate of topCandidates) {
+    const rng = createRng('balatro-calc-ev-v2');
     const evResult = computeDiscardEV(
       state, candidate.discardIndices, pool,
-      mcSamples, searchConfig, scoreOptions,
+      mcSamples, rng, searchConfig, scoreOptions,
     );
 
     // Determine most likely target hand

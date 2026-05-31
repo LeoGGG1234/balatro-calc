@@ -14,6 +14,7 @@ import { findBestScore, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { getJokerModifiers } from './joker-data';
 import { combinations } from './combo-utils';
+import { createRng, type RngFn } from './rng';
 import {
   sampleDrawsWithoutReplacement, buildAvailableCardPool,
   type EvOption,
@@ -34,6 +35,8 @@ export interface LookaheadConfig {
   maxComputationMs: number;
   /** Minimum EV improvement to justify multi-step over single-step */
   benefitThreshold: number;
+  /** Seeded RNG for deterministic Monte Carlo sampling */
+  rng?: RngFn;
 }
 
 const DEFAULT_LOOKAHEAD_CONFIG: LookaheadConfig = {
@@ -94,6 +97,7 @@ export function computeMultiStepEV(
 ): MultiDiscardEvResult {
   const startTime = performance.now();
   const cfg = { ...DEFAULT_LOOKAHEAD_CONFIG, ...config };
+  const rng = cfg.rng ?? createRng('balatro-calc-ev-v2');
   const pool = buildAvailableCardPool(state.deckComposition);
   const discardSet = new Set(firstDiscardIndices);
   const fogCount = firstDiscardIndices.length;
@@ -102,7 +106,7 @@ export function computeMultiStepEV(
   const jokerModifiers = getJokerModifiers(state.jokers);
 
   // ── Sample 1st-draw outcomes ─────────────────────────
-  const firstDraws = sampleDrawsWithoutReplacement(pool, fogCount, cfg.samplesFirstStep);
+  const firstDraws = sampleDrawsWithoutReplacement(pool, fogCount, cfg.samplesFirstStep, rng);
   if (firstDraws.length === 0) {
     // No pool: just return play score
     const playScore = findBestScore(state, searchConfig, scoreOptions);
@@ -165,7 +169,7 @@ export function computeMultiStepEV(
 
         // Sample 2nd draws (from same pool, approximate)
         const secondDraws = sampleDrawsWithoutReplacement(
-          pool, candidate.indices.length, cfg.samplesSecondStep,
+          pool, candidate.indices.length, cfg.samplesSecondStep, rng,
         );
         if (secondDraws.length === 0) continue;
 

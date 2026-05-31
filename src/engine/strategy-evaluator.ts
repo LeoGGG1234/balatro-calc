@@ -16,7 +16,7 @@ import type { Card, GameState, DeckComposition } from './types';
 import {
   HandType, Rank, Suit,
   CardEnhancement, CardEdition, Seal,
-  ALL_RANKS, ALL_SUITS, ALL_HAND_TYPES,
+  ALL_RANKS, ALL_HAND_TYPES,
   isStone,
 } from './types';
 import { getJokerModifiers } from './joker-data';
@@ -28,6 +28,7 @@ import {
   applyConsumable, getTarotTargetSuggestions, canApplyConsumable,
 } from './consumables';
 import { enhanceWithLookahead } from './lookahead';
+import { createRng, type RngFn } from './rng';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -106,9 +107,14 @@ export interface StrategyConfig {
   maxComputationMs: number;
   /** Minimum improvement % over baseline to recommend discarding */
   discardThreshold: number;
+  /** Seeded RNG for deterministic Monte Carlo sampling (default: fixed seed) */
+  rng?: RngFn;
   /** Progress callback */
   onProgress?: (evaluated: number, total: number) => void;
 }
+
+/** Fixed default seed for reproducible EV computation across sessions */
+const DEFAULT_RNG_SEED = 'balatro-calc-ev-v2';
 
 const DEFAULT_STRATEGY_CONFIG: StrategyConfig = {
   maxDiscardCandidates: 15,
@@ -127,6 +133,7 @@ export function evaluateStrategy(
 ): StrategyRecommendation {
   const startTime = performance.now();
   const cfg = { ...DEFAULT_STRATEGY_CONFIG, ...config };
+  const rng = cfg.rng ?? createRng(DEFAULT_RNG_SEED);
 
   const handSize = state.handCards.length;
   if (handSize === 0) {
@@ -260,7 +267,7 @@ export function evaluateStrategy(
 
     const evResult = computeDiscardEV(
       state, candidate.indices, pool,
-      cfg.monteCarloSamples, searchConfig, scoreOptions,
+      cfg.monteCarloSamples, rng, searchConfig, scoreOptions,
     );
 
     // Identify most likely target hand type
@@ -298,7 +305,7 @@ export function evaluateStrategy(
 
     if (topDiscardForLookahead.length > 0) {
       const enhanced = enhanceWithLookahead(
-        state, topDiscardForLookahead, undefined, searchConfig, scoreOptions,
+        state, topDiscardForLookahead, { rng }, searchConfig, scoreOptions,
       );
 
       // Replace the corresponding single-step options with enhanced ones
@@ -416,14 +423,15 @@ export function computeDiscardEV(
   discardIndices: number[],
   pool: Card[],
   numSamples: number,
+  rng: RngFn,
   searchConfig?: Partial<SearchConfig>,
   scoreOptions?: ScoreOptions,
 ): DiscardEvResult {
   const discardSet = new Set(discardIndices);
   const fogCount = discardIndices.length;
 
-  // Draw samples from the pool
-  const draws = sampleDrawsWithoutReplacement(pool, fogCount, numSamples);
+  // Draw samples from the pool (deterministic: seeded RNG)
+  const draws = sampleDrawsWithoutReplacement(pool, fogCount, numSamples, rng);
 
   const scores: number[] = [];
   const handTypeCounts: Partial<Record<HandType, number>> = {};
@@ -495,27 +503,17 @@ export function buildAvailableCardPool(deck: DeckComposition): Card[] {
     return pool;
   }
 
-  // Fallback: build from aggregate counts
-  const remainingByRank = deck.remainingByRank;
-  const remainingBySuit = deck.remainingBySuit;
-
-  for (const rank of ALL_RANKS) {
-    for (const suit of ALL_SUITS) {
-      const rankCount = remainingByRank[rank] ?? 0;
-      const suitCount = remainingBySuit[suit] ?? 0;
-      if (rankCount > 0 && suitCount > 0) {
-        pool.push({
-          id: `pool_${idCounter++}`,
-          rank, suit,
-          enhancement: CardEnhancement.None,
-          edition: CardEdition.None,
-          seal: Seal.None,
-          debuffed: false,
-        });
-      }
-    }
-  }
-
+  // No precise deck card data available — cannot build an accurate pool.
+  // Aggregate counts (remainingByRank / remainingBySuit) don't capture the
+  // joint rank×suit distribution, so any pool built from them would be wrong
+  // once cards are destroyed or added (e.g. Hanged Man, DNA).
+  // The mod always sends deck.cards; manual-entry users should use the
+  // CardEditor to build an explicit deck.
+  console.warn(
+    '[strategy-evaluator] buildAvailableCardPool: deck.cards is empty. ' +
+    'Monte Carlo EV sampling will be skipped. Use the deck editor or mod ' +
+    'to populate explicit card slots for accurate draw simulation.',
+  );
   return pool;
 }
 
@@ -525,6 +523,7 @@ export function sampleDrawsWithoutReplacement(
   pool: Card[],
   count: number,
   numSamples: number,
+  rng: RngFn,
 ): Card[][] {
   if (pool.length === 0 || count <= 0) return [];
 
@@ -532,13 +531,13 @@ export function sampleDrawsWithoutReplacement(
   const result: Card[][] = [];
   const usedKeys = new Set<string>();
 
-  // Shuffle indices
+  // Shuffle indices using seeded RNG for deterministic sampling
   const indices = pool.map((_, i) => i);
 
   for (let s = 0; s < actualSamples; s++) {
     // Partial Fisher-Yates shuffle (only need first `count` elements)
     for (let i = indices.length - 1; i >= indices.length - count; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
     const drawIndices = indices.slice(indices.length - count);

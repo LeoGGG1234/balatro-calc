@@ -1,7 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { Rank, Suit } from '../src/engine/types';
+import { Rank, Suit, CardEnhancement, CardEdition, Seal } from '../src/engine/types';
+import type { DeckCardSlot } from '../src/engine/types';
 import { computeMultiStepEV, enhanceWithLookahead } from '../src/engine/lookahead';
 import { defaultState, card } from './helpers';
+
+// ─── Test Helpers ──────────────────────────────────────────────────
+
+const ALL_RANKS = [Rank.Two, Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven,
+  Rank.Eight, Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen, Rank.King, Rank.Ace];
+const ALL_SUITS = [Suit.Spades, Suit.Hearts, Suit.Clubs, Suit.Diamonds];
+
+/** Build a standard 52-card deck, excluding the given hand cards (matched by id). */
+function buildRemainingDeck(handCards: { id: string; rank: Rank; suit: Suit }[]): DeckCardSlot[] {
+  const handIds = new Set(handCards.map(c => c.id));
+  const remaining: DeckCardSlot[] = [];
+  for (const suit of ALL_SUITS) {
+    for (const rank of ALL_RANKS) {
+      const slot: DeckCardSlot = {
+        rank, suit,
+        enhancement: CardEnhancement.None,
+        edition: CardEdition.None,
+        seal: Seal.None,
+      };
+      // Exclude cards that are in hand (matched by rank+suit since
+      // test hand cards have unique rank-suit pairs)
+      const isInHand = handCards.some(hc => hc.rank === rank && hc.suit === suit);
+      if (!isInHand) {
+        remaining.push(slot);
+      }
+    }
+  }
+  return remaining;
+}
+
+function makeDeckComp(handCards: { id: string; rank: Rank; suit: Suit }[]) {
+  const cards = buildRemainingDeck(handCards);
+  return {
+    totalCards: cards.length,
+    remainingByRank: {},
+    remainingBySuit: {},
+    cards,
+  };
+}
 
 describe('Multi-Step Lookahead', () => {
   describe('computeMultiStepEV', () => {
@@ -19,15 +59,10 @@ describe('Multi-Step Lookahead', () => {
 
       const state = {
         ...defaultState(handCards, ['joker']),
-        deckComposition: {
-          totalCards: 44, // 52 - 8 hand cards
-          remainingByRank: {},
-          remainingBySuit: { S: 10, H: 10, C: 10, D: 10 },
-          cards: [],
-        },
+        deckComposition: makeDeckComp(handCards),
       };
 
-      // Discard cards at indices 3, 4 (Two/Hearts, Four/Diamonds)
+      // Discard cards at indices 6, 7 (Two/Hearts, Four/Diamonds)
       const result = computeMultiStepEV(state, [6, 7]);
 
       expect(result.firstDiscardIndices).toEqual([6, 7]);
@@ -49,12 +84,7 @@ describe('Multi-Step Lookahead', () => {
       ];
       const state = {
         ...defaultState(handCards, ['joker']),
-        deckComposition: {
-          totalCards: 44,
-          remainingByRank: {},
-          remainingBySuit: { S: 10, H: 10, C: 10, D: 10 },
-          cards: [],
-        },
+        deckComposition: makeDeckComp(handCards),
       };
 
       // Discard the two singleton low cards
@@ -67,7 +97,15 @@ describe('Multi-Step Lookahead', () => {
 
     it('handles empty pool gracefully', () => {
       const handCards = [card(Rank.Ace, Suit.Spades)];
-      const state = defaultState(handCards, []);
+      const state = {
+        ...defaultState(handCards, []),
+        deckComposition: {
+          totalCards: 0,
+          remainingByRank: {},
+          remainingBySuit: {},
+          cards: [],
+        },
+      };
 
       // Empty pool (no deck cards)
       const result = computeMultiStepEV(state, [0]);
@@ -86,12 +124,7 @@ describe('Multi-Step Lookahead', () => {
       ];
       const state = {
         ...defaultState(handCards, ['joker']),
-        deckComposition: {
-          totalCards: 47,
-          remainingByRank: {},
-          remainingBySuit: { S: 8, H: 13, C: 13, D: 13 },
-          cards: [],
-        },
+        deckComposition: makeDeckComp(handCards),
       };
 
       const startTime = performance.now();
@@ -125,12 +158,7 @@ describe('Multi-Step Lookahead', () => {
       ];
       const state = {
         ...defaultState(handCards, ['joker']),
-        deckComposition: {
-          totalCards: 44,
-          remainingByRank: {},
-          remainingBySuit: { S: 10, H: 10, C: 10, D: 10 },
-          cards: [],
-        },
+        deckComposition: makeDeckComp(handCards),
       };
 
       const candidates = [
@@ -158,12 +186,7 @@ describe('Multi-Step Lookahead', () => {
       );
       const state = {
         ...defaultState(handCards, ['joker']),
-        deckComposition: {
-          totalCards: 44,
-          remainingByRank: {},
-          remainingBySuit: { S: 10, H: 10, C: 10, D: 10 },
-          cards: [],
-        },
+        deckComposition: makeDeckComp(handCards),
       };
 
       const candidates = [
