@@ -20,7 +20,7 @@ import {
   isStone,
 } from './types';
 import { getJokerModifiers } from './joker-data';
-import { findOptimalPlays, findBestScore, type SearchConfig } from './search';
+import { findOptimalPlays, findBestScore, formatScore, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { combinations } from './combo-utils';
 import { HAND_DEFINITIONS } from './constants';
@@ -373,7 +373,7 @@ export function evaluateStrategy(
         .filter(Boolean);
 
       const targetScore = Math.ceil(blindChips * safeMargin);
-      crossRoundRationale = `Can beat blind with ${safePlay.indices.length} cards (${formatScoreForSummary(safePlay.score)} > ${formatScoreForSummary(targetScore)} needed). Consider saving stronger cards for future blinds.`;
+      crossRoundRationale = `Can beat blind with ${safePlay.indices.length} cards (${formatScore(safePlay.score)} > ${formatScore(targetScore)} needed). Consider saving stronger cards for future blinds.`;
     }
   }
 
@@ -432,6 +432,15 @@ export function computeDiscardEV(
 
   // Draw samples from the pool (deterministic: seeded RNG)
   const draws = sampleDrawsWithoutReplacement(pool, fogCount, numSamples, rng);
+  if (draws.length === 0) {
+    return {
+      expectedValue: 0,
+      minScore: 0,
+      maxScore: 0,
+      samplesEvaluated: 0,
+      handProbabilities: {},
+    };
+  }
 
   const scores: number[] = [];
   const handTypeCounts: Partial<Record<HandType, number>> = {};
@@ -527,7 +536,9 @@ export function sampleDrawsWithoutReplacement(
 ): Card[][] {
   if (pool.length === 0 || count <= 0) return [];
 
-  const actualSamples = Math.min(numSamples, binomial(pool.length, count));
+  // Cap count at pool size to prevent out-of-bounds in partial Fisher-Yates
+  const safeCount = Math.min(count, pool.length);
+  const actualSamples = Math.min(numSamples, binomial(pool.length, safeCount));
   const result: Card[][] = [];
   const usedKeys = new Set<string>();
 
@@ -535,12 +546,12 @@ export function sampleDrawsWithoutReplacement(
   const indices = pool.map((_, i) => i);
 
   for (let s = 0; s < actualSamples; s++) {
-    // Partial Fisher-Yates shuffle (only need first `count` elements)
-    for (let i = indices.length - 1; i >= indices.length - count; i--) {
+    // Partial Fisher-Yates shuffle (only need first `safeCount` elements)
+    for (let i = indices.length - 1; i >= indices.length - safeCount; i--) {
       const j = Math.floor(rng() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
-    const drawIndices = indices.slice(indices.length - count);
+    const drawIndices = indices.slice(indices.length - safeCount);
     const key = [...drawIndices].sort((a, b) => a - b).join(',');
 
     if (usedKeys.has(key)) continue;
@@ -695,7 +706,7 @@ function buildSummaries(
 
   if (action === 'play') {
     const handName = HAND_DEFINITIONS[baselineHand]?.name ?? baselineHand;
-    const scoreStr = formatScoreForSummary(baselineScore);
+    const scoreStr = formatScore(baselineScore);
     const summary = `Play ${handName} for ${scoreStr}. No discard needed.`;
     const summaryZh = `推荐出牌: ${handName}，得分 ${scoreStr}。无需弃牌。`;
     return { summary, summaryZh };
@@ -704,8 +715,8 @@ function buildSummaries(
   if (action === 'consumable') {
     const desc = best.actionDescription ?? `Use ${best.consumableId}`;
     const descZh = best.actionDescriptionZh ?? `使用${best.consumableId}`;
-    const scoreStr = formatScoreForSummary(best.score);
-    const baselineStr = formatScoreForSummary(baselineScore);
+    const scoreStr = formatScore(best.score);
+    const baselineStr = formatScore(baselineScore);
     const pctStr = improvementPercent > 0 ? `+${improvementPercent.toFixed(0)}%` : '';
     const summary = `${desc}, then play best hand. Expected: ${scoreStr} (vs. ${baselineStr} playing ${baselineName} now, ${pctStr}).`;
     const summaryZh = `${descZh}后再出牌。期望得分: ${scoreStr}（当前最佳出牌 ${baselineName}: ${baselineStr}，${pctStr}）。`;
@@ -716,8 +727,8 @@ function buildSummaries(
   const targetName = best.targetHandType
     ? (HAND_DEFINITIONS[best.targetHandType]?.name ?? best.targetHandType)
     : 'better hand';
-  const evStr = formatScoreForSummary(best.score);
-  const baselineStr = formatScoreForSummary(baselineScore);
+  const evStr = formatScore(best.score);
+  const baselineStr = formatScore(baselineScore);
   const pctStr = improvementPercent > 0 ? `+${improvementPercent.toFixed(0)}%` : '';
 
   const summary = `Discard ${best.indices.length} card(s) to go for ${targetName}. ` +
@@ -727,14 +738,6 @@ function buildSummaries(
     `期望得分: ${evStr}（当前最佳出牌 ${baselineName}: ${baselineStr}，${pctStr}）。`;
 
   return { summary, summaryZh };
-}
-
-function formatScoreForSummary(score: number): string {
-  if (!Number.isFinite(score)) return score.toString();
-  if (score < 1_000) return score.toFixed(0);
-  if (score < 1_000_000) return (score / 1_000).toFixed(1) + 'K';
-  if (score < 1_000_000_000) return (score / 1_000_000).toFixed(1) + 'M';
-  return (score / 1_000_000_000).toFixed(1) + 'B';
 }
 
 // ─── Quick Re-export ────────────────────────────────────────────

@@ -8,6 +8,8 @@ import '../src/engine/joker-effects';
 
 // ─── Helper: create a basic card ───────────────────────────────
 
+let cardIdCounter = 0;
+
 export function card(
   rank: Rank, suit: Suit,
   enh: CardEnhancement = CardEnhancement.None,
@@ -15,7 +17,7 @@ export function card(
   seal: Seal = Seal.None
 ): Card {
   return {
-    id: `${rank}_${suit}_${Math.random().toString(36).slice(2, 6)}`,
+    id: `${rank}_${suit}_${++cardIdCounter}`,
     rank, suit, enhancement: enh, edition, seal,
     debuffed: false,
   };

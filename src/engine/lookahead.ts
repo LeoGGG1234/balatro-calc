@@ -10,7 +10,7 @@
 
 import type { Card, GameState } from './types';
 import { HandType } from './types';
-import { findBestScore, type SearchConfig } from './search';
+import { findBestScore, findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { getJokerModifiers } from './joker-data';
 import { combinations } from './combo-utils';
@@ -148,9 +148,12 @@ export function computeMultiStepEV(
     };
 
     // Score if we play now (after 1st discard)
-    const playScore = findBestScore(stateAfterFirst, searchConfig, scoreOptions);
+    const playResult = findOptimalPlays(stateAfterFirst, searchConfig, scoreOptions);
+    const playScore = playResult.optimalPlay?.totalScore ?? 0;
+    const playHand = playResult.optimalPlay?.handType ?? HandType.HighCard;
     singleStepEvSum += playScore;
     allSingleScores.push(playScore);
+    handTypeCounts[playHand] = (handTypeCounts[playHand] ?? 0) + 1;
     let bestScore = playScore;
 
     // ── Generate 2nd-discard candidates ──────────────
@@ -164,12 +167,16 @@ export function computeMultiStepEV(
 
       let secondBestEV = 0;
 
+      // Build reduced pool for 2nd draws (exclude cards already drawn in 1st draw)
+      const firstDrawnIds = new Set(drawnCards.map(c => c.id));
+      const reducedPool = pool.filter(c => !firstDrawnIds.has(c.id));
+
       for (const candidate of secondCandidates) {
         if (performance.now() - startTime > cfg.maxComputationMs) break;
 
-        // Sample 2nd draws (from same pool, approximate)
+        // Sample 2nd draws (from reduced pool — cards already drawn in 1st step excluded)
         const secondDraws = sampleDrawsWithoutReplacement(
-          pool, candidate.indices.length, cfg.samplesSecondStep, rng,
+          reducedPool, candidate.indices.length, cfg.samplesSecondStep, rng,
         );
         if (secondDraws.length === 0) continue;
 

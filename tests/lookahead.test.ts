@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { Rank, Suit, CardEnhancement, CardEdition, Seal } from '../src/engine/types';
 import type { DeckCardSlot } from '../src/engine/types';
 import { computeMultiStepEV, enhanceWithLookahead } from '../src/engine/lookahead';
+import {
+  computeDiscardEV, sampleDrawsWithoutReplacement, buildAvailableCardPool,
+} from '../src/engine/strategy-evaluator';
+import { createRng } from '../src/engine/rng';
 import { defaultState, card } from './helpers';
 
 // ─── Test Helpers ──────────────────────────────────────────────────
@@ -204,5 +208,133 @@ describe('Multi-Step Lookahead', () => {
       // Should return at least some results
       expect(enhanced.length).toBeGreaterThan(0);
     });
+  });
+});
+
+// ─── computeDiscardEV — Direct Unit Tests ───────────────────────
+
+describe('computeDiscardEV', () => {
+  it('returns deterministic EV for same inputs (seeded RNG)', () => {
+    const handCards = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.King, Suit.Spades),
+      card(Rank.Queen, Suit.Spades),
+      card(Rank.Two, Suit.Hearts),
+      card(Rank.Three, Suit.Diamonds),
+      card(Rank.Four, Suit.Clubs),
+      card(Rank.Five, Suit.Hearts),
+      card(Rank.Six, Suit.Diamonds),
+    ];
+    const state = {
+      ...defaultState(handCards, ['joker']),
+      deckComposition: makeDeckComp(handCards),
+    };
+    const pool = buildAvailableCardPool(state.deckComposition);
+    const rng = createRng('test-seed-42');
+
+    const result1 = computeDiscardEV(state, [3, 4], pool, 30, rng);
+    const rng2 = createRng('test-seed-42');
+    const result2 = computeDiscardEV(state, [3, 4], pool, 30, rng2);
+
+    // Same seed → identical results
+    expect(result1.expectedValue).toBe(result2.expectedValue);
+    expect(result1.minScore).toBe(result2.minScore);
+    expect(result1.maxScore).toBe(result2.maxScore);
+    expect(result1.samplesEvaluated).toBe(result2.samplesEvaluated);
+  });
+
+  it('returns valid structure with hand probabilities', () => {
+    const handCards = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.Ace, Suit.Hearts),
+      card(Rank.Three, Suit.Clubs),
+      card(Rank.Five, Suit.Diamonds),
+      card(Rank.Eight, Suit.Spades),
+      card(Rank.Two, Suit.Hearts),
+      card(Rank.Four, Suit.Clubs),
+      card(Rank.Six, Suit.Diamonds),
+    ];
+    const state = {
+      ...defaultState(handCards, ['joker']),
+      deckComposition: makeDeckComp(handCards),
+    };
+    const pool = buildAvailableCardPool(state.deckComposition);
+    const rng = createRng('balatro-calc-ev-v2');
+
+    const result = computeDiscardEV(state, [5, 6, 7], pool, 50, rng);
+
+    expect(result.expectedValue).toBeGreaterThan(0);
+    expect(result.samplesEvaluated).toBeGreaterThan(0);
+    expect(result.minScore).toBeLessThanOrEqual(result.expectedValue);
+    expect(result.maxScore).toBeGreaterThanOrEqual(result.expectedValue);
+    expect(result.handProbabilities).toBeDefined();
+    // At least one hand type should have probability > 0
+    const totalProb = Object.values(result.handProbabilities).reduce((a, b) => a + b, 0);
+    expect(totalProb).toBeCloseTo(1, 1);
+  });
+
+  it('handles empty pool gracefully', () => {
+    const handCards = [card(Rank.Ace, Suit.Spades)];
+    const state = {
+      ...defaultState(handCards, []),
+      deckComposition: { totalCards: 0, remainingByRank: {}, remainingBySuit: {}, cards: [] },
+    };
+    const pool = buildAvailableCardPool(state.deckComposition);
+    const rng = createRng('test');
+
+    const result = computeDiscardEV(state, [0], pool, 10, rng);
+
+    expect(result.expectedValue).toBeGreaterThanOrEqual(0);
+    expect(result.samplesEvaluated).toBe(0);
+  });
+});
+
+// ─── sampleDrawsWithoutReplacement — Determinism Tests ──────────
+
+describe('sampleDrawsWithoutReplacement', () => {
+  it('produces identical samples for identical seeds', () => {
+    const pool = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.King, Suit.Hearts),
+      card(Rank.Queen, Suit.Diamonds),
+      card(Rank.Jack, Suit.Clubs),
+      card(Rank.Ten, Suit.Spades),
+      card(Rank.Nine, Suit.Hearts),
+    ];
+
+    const rng1 = createRng('sample-test');
+    const rng2 = createRng('sample-test');
+
+    const draws1 = sampleDrawsWithoutReplacement(pool, 2, 5, rng1);
+    const draws2 = sampleDrawsWithoutReplacement(pool, 2, 5, rng2);
+
+    expect(draws1.length).toBe(draws2.length);
+    for (let i = 0; i < draws1.length; i++) {
+      expect(draws1[i].length).toBe(draws2[i].length);
+      for (let j = 0; j < draws1[i].length; j++) {
+        expect(draws1[i][j].rank).toBe(draws2[i][j].rank);
+        expect(draws1[i][j].suit).toBe(draws2[i][j].suit);
+      }
+    }
+  });
+
+  it('returns empty array for empty pool', () => {
+    const rng = createRng('test');
+    const draws = sampleDrawsWithoutReplacement([], 2, 10, rng);
+    expect(draws).toEqual([]);
+  });
+
+  it('caps samples at binomial maximum', () => {
+    const pool = [
+      card(Rank.Ace, Suit.Spades),
+      card(Rank.King, Suit.Hearts),
+      card(Rank.Queen, Suit.Diamonds),
+    ];
+    const rng = createRng('cap-test');
+
+    // C(3,2) = 3 combinations max, request 100 samples → should cap at 3
+    const draws = sampleDrawsWithoutReplacement(pool, 2, 100, rng);
+
+    expect(draws.length).toBeLessThanOrEqual(3);
   });
 });

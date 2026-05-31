@@ -6,12 +6,12 @@
  * remaining deck and computes the expected optimal-play score.
  */
 
-import type {
-  Card, GameState, DeckComposition,
-} from './types';
-import { HandType, isFogCard, ALL_RANKS, ALL_SUITS, ALL_HAND_TYPES, CardEnhancement, CardEdition, Seal } from './types';
+import type { Card, GameState } from './types';
+import { HandType, isFogCard, ALL_HAND_TYPES } from './types';
 import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
+import { createRng, type RngFn } from './rng';
+import { buildAvailableCardPool, sampleDrawsWithoutReplacement } from './strategy-evaluator';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -39,6 +39,8 @@ export interface FogEVConfig {
   maxExactCombinations: number;
   /** Number of Monte Carlo samples when exact enumeration is too large */
   monteCarloSamples: number;
+  /** Seeded RNG for deterministic Monte Carlo sampling */
+  rng?: RngFn;
 }
 
 const DEFAULT_CONFIG: FogEVConfig = {
@@ -56,25 +58,22 @@ export function computeFogCardEV(
 ): FogCardEVResult | null {
   const startTime = performance.now();
   const cfg = { ...DEFAULT_CONFIG, ...config };
+  const rng = cfg.rng ?? createRng('balatro-calc-ev-v2');
 
   const fogIndices: number[] = [];
-  const realCards: Card[] = [];
 
   for (let i = 0; i < state.handCards.length; i++) {
     if (isFogCard(state.handCards[i])) {
       fogIndices.push(i);
-    } else {
-      realCards.push(state.handCards[i]);
     }
   }
 
   if (fogIndices.length === 0) return null; // No fog cards
 
   const fogCount = fogIndices.length;
-  const deck = state.deckComposition;
 
-  // Build the pool of available cards from deck
-  const pool = buildAvailableCardPool(deck);
+  // Build the pool of available cards from deck (shared implementation)
+  const pool = buildAvailableCardPool(state.deckComposition);
   if (pool.length === 0) return null;
 
   // Enumerate or sample draw combinations
@@ -83,7 +82,7 @@ export function computeFogCardEV(
 
   const drawCombos: Card[][] = useExact
     ? enumerateDraws(pool, fogCount)
-    : sampleDraws(pool, fogCount, cfg.monteCarloSamples);
+    : sampleDrawsWithoutReplacement(pool, fogCount, cfg.monteCarloSamples, rng);
 
   if (drawCombos.length === 0) return null;
 
@@ -137,6 +136,7 @@ export function computeFogCardEV(
 
 // ─── Helpers ────────────────────────────────────────────────────
 
+/** Compute binomial coefficient C(n,k) for exact-enumeration threshold check. */
 function binomial(n: number, k: number): number {
   if (k < 0 || k > n) return 0;
   if (k === 0 || k === n) return 1;
@@ -148,121 +148,7 @@ function binomial(n: number, k: number): number {
   return result;
 }
 
-function buildAvailableCardPool(deck: DeckComposition): Card[] {
-  const pool: Card[] = [];
-  let idCounter = 0;
-
-  if (deck.cards && deck.cards.length > 0) {
-    for (const slot of deck.cards) {
-      pool.push({
-        id: `pool_${idCounter++}`,
-        rank: slot.rank,
-        suit: slot.suit,
-        enhancement: slot.enhancement,
-        edition: slot.edition,
-        seal: slot.seal,
-        debuffed: false,
-      });
-    }
-    return pool;
-  }
-
-  // Fallback: build pool from aggregate counts with proportional modifier distribution
-  const remainingByRank = deck.remainingByRank;
-  const remainingBySuit = deck.remainingBySuit;
-  const enhCounts = deck.enhancementCounts;
-  const edCounts = deck.editionCounts;
-  const sealCounts = deck.sealCounts;
-
-  for (const rank of ALL_RANKS) {
-    for (const suit of ALL_SUITS) {
-      const rankCount = remainingByRank[rank] ?? 0;
-      const suitCount = remainingBySuit[suit] ?? 0;
-      if (rankCount > 0 && suitCount > 0) {
-        pool.push({
-          id: `pool_${idCounter++}`,
-          rank,
-          suit,
-          enhancement: CardEnhancement.None,
-          edition: CardEdition.None,
-          seal: Seal.None,
-          debuffed: false,
-        });
-      }
-    }
-  }
-
-  // Distribute modifiers proportionally from aggregate counts
-  if (pool.length > 0) {
-    poolModifiers(pool, enhCounts, edCounts, sealCounts);
-  }
-
-  return pool;
-}
-
-/**
- * Assign enhancement/edition/seal modifiers to pool cards proportionally,
- * so held-in-hand jokers like Baron/Mime see accurate modifier distributions.
- * Rounds counts down to fit pool size without over-assignment.
- */
-function poolModifiers(
-  pool: Card[],
-  enhCounts?: Partial<Record<string, number>>,
-  edCounts?: Partial<Record<string, number>>,
-  sealCounts?: Partial<Record<string, number>>,
-): void {
-  const n = pool.length;
-
-  // Sort cards randomly so modifier assignment isn't positional
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  let cursor = 0;
-
-  // Assign enhancements (excluding 'none')
-  if (enhCounts) {
-    for (const [enhStr, count] of Object.entries(enhCounts)) {
-      const enh = enhStr as CardEnhancement;
-      if (enh === CardEnhancement.None || count == null) continue;
-      const assigned = Math.min(Math.round(count), n);
-      for (let i = 0; i < assigned && cursor < n; i++) {
-        pool[cursor]!.enhancement = enh;
-        cursor++;
-      }
-    }
-  }
-
-  cursor = 0;
-  // Assign editions (excluding 'none')
-  if (edCounts) {
-    for (const [edStr, count] of Object.entries(edCounts)) {
-      const ed = edStr as CardEdition;
-      if (ed === CardEdition.None || count == null) continue;
-      const assigned = Math.min(Math.round(count), n);
-      for (let i = 0; i < assigned && cursor < n; i++) {
-        pool[cursor]!.edition = ed;
-        cursor++;
-      }
-    }
-  }
-
-  cursor = 0;
-  // Assign seals (excluding 'none')
-  if (sealCounts) {
-    for (const [sealStr, count] of Object.entries(sealCounts)) {
-      const s = sealStr as Seal;
-      if (s === Seal.None || count == null) continue;
-      const assigned = Math.min(Math.round(count), n);
-      for (let i = 0; i < assigned && cursor < n; i++) {
-        pool[cursor]!.seal = s;
-        cursor++;
-      }
-    }
-  }
-}
-
+/** Exact enumeration of all k-combinations from pool (for small pools). */
 function enumerateDraws(pool: Card[], count: number): Card[][] {
   const result: Card[][] = [];
 
@@ -280,27 +166,6 @@ function enumerateDraws(pool: Card[], count: number): Card[][] {
   }
 
   recurse(0, 0, []);
-  return result;
-}
-
-function sampleDraws(pool: Card[], count: number, numSamples: number): Card[][] {
-  const result: Card[][] = [];
-  const usedKeys = new Set<string>();
-
-  for (let s = 0; s < numSamples; s++) {
-    const shuffled = [...pool];
-    // Fisher-Yates shuffle (partial — only need first `count` elements)
-    for (let i = shuffled.length - 1; i >= shuffled.length - count; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    const draw = shuffled.slice(shuffled.length - count);
-    const key = draw.map(c => c.id).sort().join(',');
-    if (usedKeys.has(key)) continue; // Avoid duplicates
-    usedKeys.add(key);
-    result.push(draw.map(c => ({ ...c })));
-  }
-
   return result;
 }
 

@@ -10,6 +10,7 @@ import { getHandBaseChips, getHandBaseMult, HAND_DEFINITIONS } from './constants
 import { combinations } from './combo-utils';
 import { computeDiscardEV, buildAvailableCardPool } from './strategy-evaluator';
 import { createRng } from './rng';
+import { formatScore } from './search';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -492,22 +493,14 @@ export function analyzeDiscardsMC(
       improvement: evResult.expectedValue - heuristic.baselineScore,
       targetHandTypes: topHand ? [topHand[0], ...candidate.targetHandTypes] : candidate.targetHandTypes,
       rationale: topHand
-        ? `${candidate.rationale} (MC-EV: ${formatScoreBrief(evResult.expectedValue)}, ` +
+        ? `${candidate.rationale} (MC-EV: ${formatScore(evResult.expectedValue)}, ` +
           `${(topHand[1] * 100).toFixed(0)}% chance of ${HAND_DEFINITIONS[topHand[0]]?.name ?? topHand[0]})`
-        : `${candidate.rationale} (MC-EV: ${formatScoreBrief(evResult.expectedValue)})`,
+        : `${candidate.rationale} (MC-EV: ${formatScore(evResult.expectedValue)})`,
     });
   }
 
   refined.sort((a, b) => b.mcExpectedValue - a.mcExpectedValue);
   return refined;
-}
-
-function formatScoreBrief(score: number): string {
-  if (!Number.isFinite(score)) return score.toString();
-  if (score < 1000) return score.toFixed(0);
-  if (score < 1_000_000) return (score / 1000).toFixed(1) + 'K';
-  if (score < 1_000_000_000) return (score / 1_000_000).toFixed(1) + 'M';
-  return (score / 1_000_000_000).toFixed(1) + 'B';
 }
 
 // ─── Quick Discard Suggestion ───────────────────────────────────
