@@ -15,6 +15,7 @@ import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { analyzeDiscards } from './discard-analyzer';
 import { computeFogCardEV, type FogCardEVResult, type FogEVConfig } from './fog-ev';
+import { evaluateStrategy, type StrategyRecommendation, type StrategyConfig } from './strategy-evaluator';
 
 // ─── Message Types ──────────────────────────────────────────────
 
@@ -68,17 +69,33 @@ export interface WorkerFogEVResultMessage {
   result: FogCardEVResult | null;
 }
 
+export interface WorkerStrategyRequest {
+  type: 'strategy';
+  id: number;
+  state: GameState;
+  config?: Partial<StrategyConfig>;
+  searchConfig?: Partial<SearchConfig>;
+  scoreOptions?: ScoreOptions;
+}
+
+export interface WorkerStrategyResultMessage {
+  type: 'strategy_result';
+  id: number;
+  result: StrategyRecommendation;
+}
+
 export interface WorkerErrorMessage {
   type: 'error';
   id: number;
   message: string;
 }
 
-export type WorkerRequest = WorkerSearchRequest | WorkerDiscardRequest | WorkerFogEVRequest;
+export type WorkerRequest = WorkerSearchRequest | WorkerDiscardRequest | WorkerFogEVRequest | WorkerStrategyRequest;
 export type WorkerResponse =
   | WorkerResultMessage
   | WorkerDiscardResultMessage
   | WorkerFogEVResultMessage
+  | WorkerStrategyResultMessage
   | WorkerProgressMessage
   | WorkerErrorMessage;
 
@@ -133,6 +150,31 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         );
         const response: WorkerFogEVResultMessage = {
           type: 'fog_ev_result',
+          id: msg.id,
+          result,
+        };
+        self.postMessage(response);
+        break;
+      }
+
+      case 'strategy': {
+        const onProgress = (evaluated: number, total: number) => {
+          const response: WorkerProgressMessage = {
+            type: 'progress',
+            id: msg.id,
+            evaluated,
+            totalEstimate: total,
+          };
+          self.postMessage(response);
+        };
+        const result = evaluateStrategy(
+          msg.state,
+          { ...msg.config, onProgress },
+          msg.searchConfig,
+          msg.scoreOptions,
+        );
+        const response: WorkerStrategyResultMessage = {
+          type: 'strategy_result',
           id: msg.id,
           result,
         };

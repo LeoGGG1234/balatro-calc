@@ -61,6 +61,8 @@ export interface InjectedSaveData {
   scoreLog?: import('../hooks/useGameState').ScoreLogEntry[];
   /** Real shop data (from mod live sync, only when in shop) */
   shop?: import('./mod-protocol').ModShopData;
+  /** Player's held consumable cards (tarot/planet/spectral, from mod live sync) */
+  heldConsumables?: import('./mod-protocol').ModHeldConsumable[];
 }
 
 // ─── Enhancement / Edition / Seal mapping tables ─────────────────

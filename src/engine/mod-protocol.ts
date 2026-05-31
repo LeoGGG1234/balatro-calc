@@ -39,6 +39,18 @@ export interface ModShopData {
   rerollCost?: number;
 }
 
+// ─── Held consumable (player's tarot/planet/spectral slots) ───────
+
+export interface ModHeldConsumable {
+  id: string;
+  name: string;
+  type: 'tarot' | 'planet' | 'spectral' | 'unknown';
+  /** Whether this consumable is currently selected/highlighted in-game */
+  highlighted: boolean;
+  /** Sell cost (usually 1 for consumables) */
+  sellCost: number;
+}
+
 // ─── Game → Tool (GET /api/state response) ─────────────────────────
 
 export interface ModStateResponse extends InjectedSaveData {
@@ -48,6 +60,8 @@ export interface ModStateResponse extends InjectedSaveData {
   scoreLog: ScoreLogEntry[];
   /** Real shop data from the game (undefined when not in shop) */
   shop?: ModShopData;
+  /** Player's held consumable cards (tarot/planet/spectral, up to 2 slots) */
+  heldConsumables?: ModHeldConsumable[];
 }
 
 // ─── Tool → Game (POST /api/command body) ──────────────────────────

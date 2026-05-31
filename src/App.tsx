@@ -7,6 +7,7 @@ import { useSearch } from './hooks/useSearch';
 import { useDiscardAnalysis } from './hooks/useDiscardAnalysis';
 import { useRunSimulation } from './hooks/useRunSimulation';
 import { useModConnection } from './hooks/useModConnection';
+import { useStrategyAnalysis } from './hooks/useStrategyAnalysis';
 import { GameStateForm } from './components/input/GameStateForm';
 import { ResultsPanel } from './components/results/ResultsPanel';
 import { DiscardPanel } from './components/results/DiscardPanel';
@@ -25,6 +26,7 @@ function App() {
   const discardAnalysis = useDiscardAnalysis();
   const runSim = useRunSimulation();
   const modConn = useModConnection();
+  const strategyAnalysis = useStrategyAnalysis();
 
   // Track whether we've done the initial state injection from mod
   const modInjectedRef = useRef(false);
@@ -111,6 +113,10 @@ function App() {
     runSim.run(gameState.form, config);
   }, [gameState.form, runSim]);
 
+  const handleAnalyzeStrategy = useCallback(() => {
+    strategyAnalysis.analyze(gameState.form);
+  }, [gameState.form, strategyAnalysis]);
+
   return (
     <div className="app">
       {/* Header */}
@@ -182,6 +188,9 @@ function App() {
             computing={search.status === 'computing'}
             onCompute={handleCompute}
             onAnalyzeDiscards={() => { handleAnalyzeDiscards(); setTab('discard'); }}
+            strategyComputing={strategyAnalysis.status === 'computing'}
+            strategyResult={strategyAnalysis.result}
+            onAnalyzeStrategy={handleAnalyzeStrategy}
           />
         )}
 

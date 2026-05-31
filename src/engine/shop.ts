@@ -3,6 +3,7 @@ import { HandType, CardEdition, Rank, CardEnhancement } from './types';
 import { HAND_DEFINITIONS, getHandBaseChips, getHandBaseMult } from './constants';
 import { findOptimalPlay } from './search';
 import { getAllJokers } from './jokers/registry';
+import type { ModShopData, ModHeldConsumable } from './mod-protocol';
 
 // ─── Booster Pack Types ────────────────────────────────────────
 
@@ -499,6 +500,275 @@ function getBoosterPackUtility(type: BoosterType, state: GameState): number {
     case BoosterType.Buffoon:
       return 0.35; // Joker packs have high potential
   }
+}
+
+// ─── Real Shop Analysis (uses mod data, not random) ──────────────
+
+export interface RealShopRecommendation {
+  /** What to buy/use */
+  label: string;
+  /** Item type */
+  itemType: 'joker' | 'tarot' | 'planet' | 'voucher' | 'pack' | 'held_tarot' | 'held_planet' | 'held_spectral';
+  /** Item name */
+  name: string;
+  /** Item name in Chinese */
+  nameZh: string;
+  /** Cost in dollars (0 for held consumables) */
+  price: number;
+  /** Utility score (higher = better) */
+  utility: number;
+  /** Whether the player can afford this */
+  canAfford: boolean;
+  /** Utility-per-dollar ratio */
+  valueRatio: number;
+}
+
+export interface RealShopAnalysis {
+  /** Ranked list of recommendations (best first) */
+  recommendations: RealShopRecommendation[];
+  /** Best single action to take */
+  bestAction: RealShopRecommendation | null;
+  /** Summary text */
+  summary: string;
+  /** Summary in Chinese */
+  summaryZh: string;
+  /** Joker utility from real shop */
+  jokerUtility: number;
+  /** Tarot utility from real shop */
+  tarotUtility: number;
+  /** Planet utility from real shop */
+  planetUtility: number;
+  /** Voucher utility from real shop */
+  voucherUtility: number;
+  /** Best held consumable to use */
+  bestHeldConsumable: RealShopRecommendation | null;
+}
+
+/**
+ * Analyze the player's real shop data (from mod) and held consumables
+ * to produce ranked, actionable recommendations.
+ */
+export function analyzeRealShop(
+  gameState: GameState,
+  dollars: number,
+  shopData: ModShopData | undefined,
+  heldConsumables: ModHeldConsumable[],
+): RealShopAnalysis {
+  const recommendations: RealShopRecommendation[] = [];
+
+  // ── 1. Evaluate real shop jokers ──────────────────────────────
+  if (shopData?.jokers && shopData.jokers.length > 0) {
+    for (const sj of shopData.jokers) {
+      const util = getJokerUtility(sj.id, gameState);
+      const canAfford = dollars >= sj.price;
+      recommendations.push({
+        label: 'Shop Joker',
+        itemType: 'joker',
+        name: sj.id,
+        nameZh: sj.id,
+        price: sj.price,
+        utility: util,
+        canAfford,
+        valueRatio: sj.price > 0 ? util / sj.price : util,
+      });
+    }
+  }
+
+  // ── 2. Evaluate real shop tarot/consumable ────────────────────
+  if (shopData?.consumable) {
+    const cons = shopData.consumable;
+    const tarotDef = TAROT_CARDS.find(t => t.id === cons.id);
+    if (tarotDef) {
+      const util = tarotDef.utilityFn(gameState);
+      const canAfford = dollars >= cons.price;
+      recommendations.push({
+        label: 'Shop Card',
+        itemType: 'tarot',
+        name: tarotDef.name,
+        nameZh: tarotDef.nameZh,
+        price: cons.price,
+        utility: util,
+        canAfford,
+        valueRatio: cons.price > 0 ? util / cons.price : util,
+      });
+    } else {
+      // Unknown consumable (planet or spectral in shop slot)
+      const planetDef = PLANET_CARDS.find(p => p.id === cons.id);
+      const isPlanet = !!planetDef;
+      const util = planetDef ? planetDef.utilityFn(gameState) : 0.08;
+      const canAfford = dollars >= cons.price;
+      recommendations.push({
+        label: isPlanet ? 'Shop Planet' : 'Shop Card',
+        itemType: isPlanet ? 'planet' : 'tarot',
+        name: cons.id,
+        nameZh: cons.id,
+        price: cons.price,
+        utility: util,
+        canAfford,
+        valueRatio: cons.price > 0 ? util / cons.price : util,
+      });
+    }
+  }
+
+  // ── 3. Evaluate real shop voucher ─────────────────────────────
+  if (shopData?.voucher) {
+    const v = shopData.voucher;
+    const voucherDef = VOUCHERS.find(vd => vd.id === v.id);
+    const util = voucherDef ? voucherDef.utilityFn(gameState) : 0.1;
+    const canAfford = dollars >= v.price;
+    recommendations.push({
+      label: 'Shop Voucher',
+      itemType: 'voucher',
+      name: v.id,
+      nameZh: v.id,
+      price: v.price,
+      utility: util,
+      canAfford,
+      valueRatio: v.price > 0 ? util / v.price : util,
+    });
+  }
+
+  // ── 4. Evaluate booster packs ─────────────────────────────────
+  if (shopData?.boosters && shopData.boosters.length > 0) {
+    for (const bp of shopData.boosters) {
+      let packUtil = 0.15; // default
+      const bpType = bp.type?.toLowerCase() ?? '';
+      if (bpType.includes('arcana') || bpType.includes('tarot')) {
+        const utils = TAROT_CARDS.map(t => t.utilityFn(gameState));
+        packUtil = Math.max(...utils) * 0.7;
+      } else if (bpType.includes('celestial') || bpType.includes('planet')) {
+        const utils = PLANET_CARDS.map(p => p.utilityFn(gameState));
+        packUtil = Math.max(...utils) * 0.7;
+      } else if (bpType.includes('spectral')) {
+        packUtil = 0.30;
+      } else if (bpType.includes('buffoon') || bpType.includes('joker')) {
+        packUtil = 0.35;
+      } else if (bpType.includes('standard')) {
+        packUtil = 0.05;
+      }
+      const canAfford = dollars >= bp.price;
+      recommendations.push({
+        label: 'Booster Pack',
+        itemType: 'pack',
+        name: bp.type ?? 'Pack',
+        nameZh: bp.type ?? '补充包',
+        price: bp.price,
+        utility: packUtil,
+        canAfford,
+        valueRatio: bp.price > 0 ? packUtil / bp.price : packUtil,
+      });
+    }
+  }
+
+  // ── 5. Evaluate held consumables (should I use one now?) ──────
+  let bestHeldConsumable: RealShopRecommendation | null = null;
+  for (const hc of heldConsumables) {
+    let util = 0;
+    let itemType: RealShopRecommendation['itemType'] = 'held_tarot';
+    let name = hc.name;
+    let nameZh = hc.name;
+
+    if (hc.type === 'tarot') {
+      itemType = 'held_tarot';
+      const tarotDef = TAROT_CARDS.find(t => t.id === hc.id);
+      if (tarotDef) {
+        util = tarotDef.utilityFn(gameState);
+        name = tarotDef.name;
+        nameZh = tarotDef.nameZh;
+      } else {
+        util = 0.08; // unknown tarot
+      }
+      // Bonus: held tarot is "free" to use (already paid for)
+      util *= 1.2;
+    } else if (hc.type === 'planet') {
+      itemType = 'held_planet';
+      const planetDef = PLANET_CARDS.find(p => p.id === hc.id);
+      if (planetDef) {
+        util = planetDef.utilityFn(gameState);
+        name = planetDef.name;
+      } else {
+        util = 0.10;
+      }
+      util *= 1.1;
+    } else if (hc.type === 'spectral') {
+      itemType = 'held_spectral';
+      util = 0.25; // spectral cards are powerful but situational
+      nameZh = '光谱牌';
+    }
+
+    const rec: RealShopRecommendation = {
+      label: hc.highlighted ? 'Selected' : 'Held',
+      itemType,
+      name,
+      nameZh,
+      price: 0, // free to use (already owned)
+      utility: util,
+      canAfford: true,
+      valueRatio: util, // infinite value ratio since free
+    };
+    recommendations.push(rec);
+
+    if (!bestHeldConsumable || util > bestHeldConsumable.utility) {
+      bestHeldConsumable = rec;
+    }
+  }
+
+  // ── 6. Sort by value ratio (utility per dollar) ───────────────
+  recommendations.sort((a, b) => {
+    // Held consumables (price=0) always float to top
+    if (a.price === 0 && b.price === 0) return b.utility - a.utility;
+    if (a.price === 0) return -1;
+    if (b.price === 0) return 1;
+    return b.valueRatio - a.valueRatio;
+  });
+
+  const bestAction = recommendations.length > 0 ? recommendations[0] : null;
+
+  // ── 7. Build summaries ────────────────────────────────────────
+  const extractUtils = () => {
+    const jUtil = shopData?.jokers?.length
+      ? Math.max(...shopData.jokers.map(sj => getJokerUtility(sj.id, gameState)))
+      : 0;
+    const tUtil = recommendations.find(r => r.itemType === 'tarot')?.utility ?? 0;
+    const pUtil = recommendations.find(r => r.itemType === 'planet')?.utility ?? 0;
+    const vUtil = recommendations.find(r => r.itemType === 'voucher')?.utility ?? 0;
+    return { jUtil, tUtil, pUtil, vUtil };
+  };
+  const utils = extractUtils();
+
+  let summary = 'No shop data available.';
+  let summaryZh = '无商店数据。';
+
+  if (bestAction) {
+    if (bestAction.itemType.startsWith('held_')) {
+      summary = `Use your held "${bestAction.name}" — it's free and has high value.`;
+      summaryZh = `使用手中的「${bestAction.nameZh}」—— 免费且价值高。`;
+    } else if (bestAction.canAfford) {
+      summary = `Buy "${bestAction.name}" ($${bestAction.price}) — best value at ${(bestAction.valueRatio * 100).toFixed(1)}% util/$.`;
+      summaryZh = `购买「${bestAction.nameZh}」($${bestAction.price}) — 性价比最高，效用比 ${(bestAction.valueRatio * 100).toFixed(1)}%。`;
+    } else {
+      const affordable = recommendations.filter(r => r.canAfford && r.price > 0);
+      if (affordable.length > 0) {
+        summary = `Can't afford best pick. Buy "${affordable[0].name}" instead.`;
+        summaryZh = `余额不足，改买「${affordable[0].nameZh}」。`;
+      } else {
+        summary = 'Not enough money for any shop item. Consider using held consumables.';
+        summaryZh = '余额不足以购买任何商品，考虑使用手中消耗牌。';
+      }
+    }
+  }
+
+  return {
+    recommendations,
+    bestAction,
+    summary,
+    summaryZh,
+    jokerUtility: utils.jUtil,
+    tarotUtility: utils.tUtil,
+    planetUtility: utils.pUtil,
+    voucherUtility: utils.vUtil,
+    bestHeldConsumable,
+  };
 }
 
 // ─── Re-export tarot/planet data for UI ────────────────────────

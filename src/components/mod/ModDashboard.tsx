@@ -4,9 +4,13 @@ import { BlindType } from '../../engine/types';
 import { useI18n } from '../../i18n/context';
 import type { UseModConnectionReturn } from '../../hooks/useModConnection';
 import type { GameStateForm } from '../../hooks/useGameState';
+import { buildGameState } from '../../hooks/useGameState';
 import { CardComponent } from '../shared/CardComponent';
 import { formatScore } from '../../engine/search';
 import { getJoker } from '../../engine/joker-effects';
+import { analyzeRealShop } from '../../engine/shop';
+import type { RealShopAnalysis } from '../../engine/shop';
+import type { StrategyRecommendation } from '../../engine/strategy-evaluator';
 
 interface ModDashboardProps {
   form: GameStateForm;
@@ -17,6 +21,9 @@ interface ModDashboardProps {
   computing: boolean;
   onCompute: () => void;
   onAnalyzeDiscards: () => void;
+  strategyComputing?: boolean;
+  strategyResult?: StrategyRecommendation | null;
+  onAnalyzeStrategy?: () => void;
 }
 
 const BLIND_LABELS: Record<BlindType, string> = {
@@ -34,6 +41,9 @@ export function ModDashboard({
   computing,
   onCompute,
   onAnalyzeDiscards,
+  strategyComputing = false,
+  strategyResult = null,
+  onAnalyzeStrategy,
 }: ModDashboardProps) {
   const { t } = useI18n();
 
@@ -54,6 +64,21 @@ export function ModDashboard({
       return { name, edition: j.edition, stateOverride };
     });
   }, [form.jokers, form.jokerStateOverrides, t.jokerNames]);
+
+  // Compute held consumable display
+  const heldConsumableDisplay = useMemo(() => {
+    return form.heldConsumables.map((hc) => {
+      const typeLabel = hc.type === 'tarot' ? '🃏' : hc.type === 'planet' ? '🪐' : hc.type === 'spectral' ? '👻' : '❓';
+      return { ...hc, typeLabel };
+    });
+  }, [form.heldConsumables]);
+
+  // Real shop analysis using mod data
+  const shopAnalysis: RealShopAnalysis | null = useMemo(() => {
+    if (!form.shop && form.heldConsumables.length === 0) return null;
+    const gs = buildGameState(form);
+    return analyzeRealShop(gs, form.dollars, form.shop, form.heldConsumables);
+  }, [form.shop, form.heldConsumables, form.dollars, form]);
 
   return (
     <div className="mod-dashboard">
@@ -143,6 +168,31 @@ export function ModDashboard({
               <div className="mod-dashboard__tags">
                 {form.activeVouchers.map((vId: string) => (
                   <span key={vId} className="mod-dashboard__tag">{vId}</span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Held Consumables (tarot/planet/spectral in player hand) */}
+          {heldConsumableDisplay.length > 0 && (
+            <section className="mod-dashboard__section mod-dashboard__section--held">
+              <h3 className="mod-dashboard__section-title">
+                Held Consumables ({heldConsumableDisplay.length})
+              </h3>
+              <div className="mod-dashboard__held-list">
+                {heldConsumableDisplay.map((hc, i) => (
+                  <div
+                    key={i}
+                    className={`mod-dashboard__held-item ${hc.highlighted ? 'mod-dashboard__held-item--active' : ''}`}
+                    title={hc.highlighted ? 'Currently selected in-game' : undefined}
+                  >
+                    <span className="mod-dashboard__held-icon">{hc.typeLabel}</span>
+                    <span className="mod-dashboard__held-name">{hc.name}</span>
+                    <span className="mod-dashboard__held-type">{hc.type}</span>
+                    {hc.highlighted && (
+                      <span className="mod-dashboard__held-active-dot" title="Selected">●</span>
+                    )}
+                  </div>
                 ))}
               </div>
             </section>
@@ -265,6 +315,128 @@ export function ModDashboard({
         </div>
       </div>
 
+      {/* ── Shop Analysis (real mod data) ──────────────────────────── */}
+      {shopAnalysis && shopAnalysis.recommendations.length > 0 && (
+        <div className="mod-dashboard__shop-analysis">
+          <div className="mod-dashboard__shop-analysis-header">
+            <span className="mod-dashboard__shop-analysis-title">🛒 Shop Analysis</span>
+            <span className="mod-dashboard__shop-analysis-summary">
+              {shopAnalysis.summaryZh}
+            </span>
+          </div>
+          <div className="mod-dashboard__shop-analysis-recs">
+            {shopAnalysis.recommendations.slice(0, 4).map((rec, i) => (
+              <div
+                key={i}
+                className={`mod-dashboard__shop-rec ${i === 0 ? 'mod-dashboard__shop-rec--best' : ''} ${!rec.canAfford ? 'mod-dashboard__shop-rec--unaffordable' : ''}`}
+              >
+                <span className="mod-dashboard__shop-rec-rank">#{i + 1}</span>
+                <span className="mod-dashboard__shop-rec-label">{rec.label}</span>
+                <span className="mod-dashboard__shop-rec-name">{rec.nameZh || rec.name}</span>
+                <span className="mod-dashboard__shop-rec-price">
+                  {rec.price === 0 ? 'Free' : `$${rec.price}`}
+                </span>
+                <span className="mod-dashboard__shop-rec-util">
+                  {(rec.utility * 100).toFixed(0)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Strategy Analysis ────────────────────────────────────── */}
+      {strategyResult && (
+        <div className="mod-dashboard__strategy">
+          <div className="mod-dashboard__strategy-header">
+            <span className="mod-dashboard__strategy-title">🎯 Strategy Analysis</span>
+            <span className={`mod-dashboard__strategy-action mod-dashboard__strategy-action--${strategyResult.action}`}>
+              {strategyResult.action === 'discard' ? '弃牌冲大牌型' :
+               strategyResult.action === 'consumable' ? '先用消耗牌' :
+               '直接出牌'}
+            </span>
+          </div>
+
+          <p className="mod-dashboard__strategy-summary">
+            {strategyResult.summaryZh}
+          </p>
+
+          {/* Stats row */}
+          <div className="mod-dashboard__strategy-stats">
+            <div className="mod-dashboard__strategy-stat">
+              <span className="mod-dashboard__strategy-stat-label">期望分数</span>
+              <span className="mod-dashboard__strategy-stat-value">
+                {formatScore(strategyResult.expectedScore)}
+              </span>
+            </div>
+            <div className="mod-dashboard__strategy-stat">
+              <span className="mod-dashboard__strategy-stat-label">当前最佳</span>
+              <span className="mod-dashboard__strategy-stat-value mod-dashboard__strategy-stat-value--muted">
+                {formatScore(strategyResult.baselineScore)}
+              </span>
+            </div>
+            <div className="mod-dashboard__strategy-stat">
+              <span className="mod-dashboard__strategy-stat-label">提升</span>
+              <span className={`mod-dashboard__strategy-stat-value ${strategyResult.improvementPercent > 0 ? 'mod-dashboard__strategy-stat-value--positive' : ''}`}>
+                {strategyResult.improvementPercent > 0 ? '+' : ''}{strategyResult.improvementPercent.toFixed(0)}%
+              </span>
+            </div>
+          </div>
+
+          {/* Ranked options */}
+          {strategyResult.allOptions.length > 1 && (
+            <div className="mod-dashboard__strategy-options">
+              {strategyResult.allOptions.slice(0, 4).map((opt, i) => (
+                <div
+                  key={i}
+                  className={`mod-dashboard__strategy-opt ${i === 0 ? 'mod-dashboard__strategy-opt--best' : ''}`}
+                >
+                  <span className="mod-dashboard__strategy-opt-rank">#{i + 1}</span>
+                  <span className={`mod-dashboard__strategy-opt-type mod-dashboard__strategy-opt-type--${opt.type}`}>
+                    {opt.type === 'discard' ? '弃' : opt.type === 'consumable' ? '消' : '出'}
+                  </span>
+                  <span className="mod-dashboard__strategy-opt-detail">
+                    {opt.type === 'discard'
+                      ? `${opt.isMultiStep ? '多步' : ''}弃${opt.indices.length}张 → ${opt.targetHandType ?? 'better'}`
+                      : opt.type === 'consumable'
+                        ? (opt.actionDescriptionZh ?? `用${opt.consumableId}${opt.indices.length > 0 ? `→#${opt.indices[0] + 1}` : ''}`)
+                        : `${opt.indices.length}张牌`}
+                  </span>
+                  <span className="mod-dashboard__strategy-opt-score">
+                    {opt.isEV ? '≈' : ''}{formatScore(opt.score)}
+                    {opt.isEV && opt.samplesEvaluated ? ` (${opt.samplesEvaluated}样本)` : ''}
+                  </span>
+                  {opt.isEV && opt.handProbabilities && (
+                    <span className="mod-dashboard__strategy-opt-prob">
+                      {Object.entries(opt.handProbabilities)
+                        .sort(([, a], [, b]) => (b as number) - (a as number))
+                        .slice(0, 2)
+                        .map(([ht, prob]) => `${ht.replace(/_/g, ' ')} ${((prob as number) * 100).toFixed(0)}%`)
+                        .join(' | ')}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Cross-round planning hint */}
+          {strategyResult.savedCards && strategyResult.savedCards.length > 0 && (
+            <div className="mod-dashboard__strategy-cross-round">
+              <span className="mod-dashboard__strategy-cross-round-title">💾 Save for Later</span>
+              <p className="mod-dashboard__strategy-cross-round-text">
+                {strategyResult.crossRoundRationale ?? 'Consider saving stronger cards for future blinds.'}
+              </p>
+              <div className="mod-dashboard__strategy-cross-round-cards">
+                {strategyResult.savedCards.slice(0, 5).map((card: Card, i: number) => (
+                  <CardComponent key={i} card={card} size="sm" />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Action buttons ──────────────────────────────────────────── */}
       <div className="mod-dashboard__actions">
         <button
@@ -281,6 +453,15 @@ export function ModDashboard({
         >
           Analyze Discards
         </button>
+        {onAnalyzeStrategy && (
+          <button
+            className="mod-dashboard__btn mod-dashboard__btn--strategy"
+            disabled={strategyComputing || form.handCards.length === 0}
+            onClick={onAnalyzeStrategy}
+          >
+            {strategyComputing ? 'Analyzing Strategy...' : '🎯 Analyze Strategy'}
+          </button>
+        )}
         <span className="mod-dashboard__hint">
           Connected to Mod — {modConn.lastPollTime
             ? `Last update: ${new Date(modConn.lastPollTime).toLocaleTimeString()}`

@@ -162,6 +162,63 @@ export function findOptimalPlays(
   };
 }
 
+// ─── Lightweight Best Score (no aggregation/sorting) ─────────────
+
+/**
+ * Fast variant of findOptimalPlays that returns only the maximum score.
+ * Skips hand-type aggregation and full-result sorting. Useful for
+ * Monte Carlo EV estimation where only the top score matters.
+ */
+export function findBestScore(
+  state: GameState,
+  config: Partial<SearchConfig> = {},
+  options: ScoreOptions = {}
+): number {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const startTime = performance.now();
+
+  const jokerModifiers = getJokerModifiers(state.jokers);
+  const jokerOrderings = cfg.includeJokerOrdering
+    ? generateJokerOrderings(state.jokers, cfg.smartOrdering)
+    : [state.jokers.map((_, i) => i)];
+
+  // Pre-build joker definition map once
+  const jokerDefs = new Map(state.jokers.map(j => [j.id, getJoker(j.id)] as const));
+
+  let maxScore = 0;
+  let genCount = 0;
+
+  for (const subset of generateCardSubsets(state.handCards)) {
+    if (++genCount % 100 === 0 && performance.now() - startTime > cfg.maxComputationMs) break;
+
+    const playedCards = subset.cards;
+    const handType = recognizeHand(playedCards, jokerModifiers);
+
+    // Boss effect filters
+    if (state.blind.forbiddenHandTypes?.includes(handType)) continue;
+    if (state.blind.forcedHandType && handType !== state.blind.forcedHandType) continue;
+    if (state.blind.mustPlayFiveCards && playedCards.length !== 5) continue;
+    if (state.blind.forcedCardId && !playedCards.some(c => c.id === state.blind.forcedCardId)) continue;
+
+    const heldCards = state.handCards.filter((_, i) => !subset.indices.includes(i));
+
+    for (const jokerOrder of jokerOrderings) {
+      const breakdown = scorePlay(state, {
+        playedCards,
+        heldCards,
+        handType,
+        jokerOrder,
+      }, { ...options, jokerModifiers, jokerDefs });
+
+      if (breakdown.finalScore > maxScore) {
+        maxScore = breakdown.finalScore;
+      }
+    }
+  }
+
+  return maxScore;
+}
+
 // ─── Hand Type Aggregation ──────────────────────────────────────
 
 function aggregateByHandType(scoredPlays: ScoredPlay[]): HandRanking[] {

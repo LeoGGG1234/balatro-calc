@@ -22,6 +22,7 @@ import type { DeckCardSlot, DeckCardFilter } from '../engine/types';
 import type { DeckPreset } from '../engine/deck';
 import type { InjectedSaveData } from '../engine/save-parser';
 import type { ModShopData } from '../engine/mod-protocol';
+import type { ModHeldConsumable } from '../engine/mod-protocol';
 import { createRng } from '../engine/rng';
 import { drawHand } from '../engine/run-simulator';
 import { recognizeHand } from '../engine/hand-evaluator';
@@ -188,6 +189,8 @@ export interface GameStateForm {
   maxJokerSlots: number;
   /** Real shop data from the mod (undefined when not in shop or no mod connected). */
   shop?: ModShopData;
+  /** Player's held consumable cards (tarot/planet/spectral, from mod live sync). */
+  heldConsumables: ModHeldConsumable[];
 }
 
 // ─── Actions ───────────────────────────────────────────────────
@@ -269,6 +272,7 @@ function createInitialState(): GameStateForm {
     selectedDeck: null,
     selectedStake: null,
     maxJokerSlots: 7,
+    heldConsumables: [],
   };
 }
 
@@ -702,6 +706,7 @@ export function formReducer(state: GameStateForm, action: FormAction): GameState
         roundScore: d.roundScore ?? 0,
         scoreLog: normalizeArr(d.scoreLog) ?? [],
         shop: d.shop,
+        heldConsumables: normalizeArr(d.heldConsumables) ?? [],
       };
     }
 
@@ -748,6 +753,7 @@ export function buildGameState(form: GameStateForm): GameState {
     },
     roundState,
     flags,
+    heldConsumables: form.heldConsumables?.map(hc => ({ id: hc.id, type: hc.type })),
   };
 }
 

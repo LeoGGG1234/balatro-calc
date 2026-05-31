@@ -386,6 +386,45 @@ local function compute_base_round_params(active_vouchers)
   }
 end
 
+-- ─── Held consumables (player's tarot/planet/spectral slots) ─────
+
+local function collect_held_consumables()
+  local area = G.consumeables
+  if not area or not area.cards then return {} end
+
+  local cards = {}
+  for _, card in ipairs(area.cards) do
+    local ability = card.ability or {}
+    -- Determine type: tarot, planet, or spectral
+    local card_type = 'unknown'
+    local set = ability['set'] or ''
+    if set == 'Tarot' or set == 'tarot' then
+      card_type = 'tarot'
+    elseif set == 'Planet' or set == 'planet' then
+      card_type = 'planet'
+    elseif set == 'Spectral' or set == 'spectral' then
+      card_type = 'spectral'
+    end
+
+    -- Get card key/ID (strip prefix: c_ for tarot/spectral, p_ for planet)
+    local card_id = ability.key or ability.name or 'unknown'
+    if type(card_id) == 'string' then
+      if card_id:sub(1, 2) == 'c_' or card_id:sub(1, 2) == 'p_' then
+        card_id = card_id:sub(3)
+      end
+    end
+
+    cards[#cards + 1] = {
+      id = card_id,
+      name = ability.name or card_id,
+      type = card_type,
+      highlighted = card.highlighted == true,
+      sellCost = safe_number(card.sell_cost, 0),
+    }
+  end
+  return cards
+end
+
 -- ─── Shop data ────────────────────────────────────────────────────
 
 local function collect_shop()
@@ -471,6 +510,7 @@ function collector.collect()
   local vouchers = collect_active_vouchers()
   local boss_effect = collect_boss_effect(blind_type, blind_key)
   local base_params = compute_base_round_params(vouchers)
+  local held_consumables = collect_held_consumables()
   local shop_data = collect_shop()
 
   -- Try G.GAME.dollars first (global, more reliable), fall back to current_round.dollars
@@ -503,6 +543,7 @@ function collector.collect()
     maxHandsBase = base_params.maxHandsBase,
     maxDiscardsBase = base_params.maxDiscardsBase,
     handSizeBase = base_params.handSizeBase,
+    heldConsumables = held_consumables,
     shop = shop_data,
   }
 end

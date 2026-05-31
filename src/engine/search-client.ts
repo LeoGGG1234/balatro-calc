@@ -10,9 +10,10 @@ import type { SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import type { DiscardResult } from './discard-analyzer';
 import type { FogCardEVResult, FogEVConfig } from './fog-ev';
+import type { StrategyRecommendation, StrategyConfig } from './strategy-evaluator';
 import type {
-  WorkerSearchRequest, WorkerDiscardRequest, WorkerFogEVRequest,
-  WorkerResultMessage, WorkerDiscardResultMessage, WorkerFogEVResultMessage,
+  WorkerSearchRequest, WorkerDiscardRequest, WorkerFogEVRequest, WorkerStrategyRequest,
+  WorkerResultMessage, WorkerDiscardResultMessage, WorkerFogEVResultMessage, WorkerStrategyResultMessage,
   WorkerErrorMessage, WorkerResponse,
 } from './search-worker';
 
@@ -57,8 +58,9 @@ export class SearchClient {
       case 'result':
       case 'discard_result':
       case 'fog_ev_result':
+      case 'strategy_result':
         this.pending.delete(msg.id);
-        (resolve as Resolver<WorkerResultMessage | WorkerDiscardResultMessage | WorkerFogEVResultMessage>)(msg);
+        (resolve as Resolver<WorkerResultMessage | WorkerDiscardResultMessage | WorkerFogEVResultMessage | WorkerStrategyResultMessage>)(msg);
         break;
       case 'error':
         this.pending.delete(msg.id);
@@ -151,6 +153,37 @@ export class SearchClient {
       this.getWorker().postMessage(msg);
     }).then((raw) => {
       const m = raw as WorkerFogEVResultMessage | WorkerErrorMessage;
+      if ('result' in m) return { result: m.result };
+      return { error: (m as WorkerErrorMessage).message };
+    });
+  }
+
+  /**
+   * Run EV-based strategy analysis in a worker thread.
+   * Compares "play now" vs "discard then play" using Monte Carlo sampling.
+   */
+  analyzeStrategy(
+    state: GameState,
+    config?: Partial<StrategyConfig>,
+    searchConfig?: Partial<SearchConfig>,
+    scoreOptions?: ScoreOptions,
+  ): Promise<{ result?: StrategyRecommendation; error?: string }> {
+    return new Promise(resolve => {
+      const id = this.nextId++;
+      this.pending.set(id, resolve as Resolver<unknown>);
+
+      const msg: WorkerStrategyRequest = {
+        type: 'strategy',
+        id,
+        state,
+        config,
+        searchConfig,
+        scoreOptions,
+      };
+
+      this.getWorker().postMessage(msg);
+    }).then((raw) => {
+      const m = raw as WorkerStrategyResultMessage | WorkerErrorMessage;
       if ('result' in m) return { result: m.result };
       return { error: (m as WorkerErrorMessage).message };
     });

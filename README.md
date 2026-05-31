@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-19.2-61dafb)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.0-646cff)](https://vite.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.1-6e9f2a)](https://vitest.dev/)
-[![Tests](https://img.shields.io/badge/Tests-502%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-531%20passed-brightgreen)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow)]()
 
 ---
@@ -183,6 +183,24 @@ Balatro (Lua/Steammodded)          Web Tool (React/TypeScript)
 
 **Requirements:** [Steamodded](https://github.com/Steamodded/smods) (includes luasocket), Balatro (official/vanilla). Open the web tool in any browser — the connection indicator turns green when the mod is detected.
 
+#### 15. EV Strategy Engine v2 — Multi-Step Lookahead, Consumable Synergy & Cross-Round Planning
+
+The strategy engine computes expected value for every decision branch and recommends the optimal action sequence:
+
+- **Consumable Card Synergy (消耗牌联动)**: Tarot and planet cards held in your consumable slots are evaluated for their scoring impact. Strength (rank up), Death (copy card), Hanged Man (destroy low-value cards), suit changers (Star/Moon/Sun/World), and 7 enhancement tarots (Magician, High Priestess, Empress, Lovers, Chariot, Justice, Devil, Tower) are modeled with pure-function application — each returns a new `GameState` without mutating the original. The engine suggests "use consumable first, then play" when the modified state yields higher EV.
+- **Multi-Step Lookahead (多步前瞻)**: When 2+ discards remain, the engine evaluates two-step decision trees via Monte Carlo sampling: "discard → sample draws → decide: play now or discard again → play." Aggressive pruning (top-3 candidates, 10 samples per step, 15s time limit) keeps computation tractable at ~930 `findBestScore` calls per evaluation.
+- **Cross-Round Planning (跨回合规划)**: If a weaker hand type already beats the blind with a 15% safety margin, and the strongest play wastes >50% of its score potential, the engine recommends saving strong cards for future blinds — annotated with the saved card list and rationale.
+
+**Architecture:**
+```
+src/engine/consumables.ts    → Pure-function tarot/planet application (immutable state cloning)
+src/engine/lookahead.ts      → Two-level MC decision tree search with pruning
+src/engine/strategy-evaluator.ts → Top-level EV orchestrator: play vs. discard vs. consumable
+src/hooks/useStrategyAnalysis.ts → React hook: Worker communication + result formatting
+```
+
+New `EvOption` types: `'play' | 'discard' | 'consumable'`, with multi-step annotations (`isMultiStep`, `lookaheadDepth`, `actionDescriptionZh`) and cross-round savings (`savedCards`, `crossRoundRationale`).
+
 ---
 
 ### 🏗️ Architecture
@@ -215,6 +233,9 @@ balatro-calc/
 │   │   ├── shop.ts                      #    Shop generation, item utility scoring, voucher definitions
 │   │   ├── boss-data.ts                #    28 boss blind definitions + BossEffect interface
 │   │   ├── discard-analyzer.ts         # ★ Discard subset enumeration + post-draw EV estimation
+│   │   ├── strategy-evaluator.ts        # ★ EV strategy engine: play vs. discard vs. consumable, multi-step integration
+│   │   ├── consumables.ts               # ★ Pure-function tarot/planet application (Strength, Death, 15+ effects)
+│   │   ├── lookahead.ts                 # ★ Two-level Monte Carlo decision tree search with pruning
 │   │   ├── run-simulator.ts            # ★ Multi-ante state machine: blinds → search → shop → repeat
 │   │   ├── fog-ev.ts                    #    Fog-card expected value engine (combinatorial enumeration + Monte Carlo)
 │   │   ├── card-parser.ts              #    Short notation parser (e.g. "ah 10s kd.g.r 3*jh")
@@ -257,6 +278,7 @@ balatro-calc/
 │   │   ├── useGameState.ts              #    25-action useReducer: hand, jokers, deck, round, vouchers, bosses, play-hand, new-round, deck/stake selection
 │   │   ├── useSearch.ts                 #    Async search with Web Worker, progress tracking
 │   │   ├── useDiscardAnalysis.ts        #    Discard analysis with Web Worker delegation
+│   │   ├── useStrategyAnalysis.ts        #    EV strategy analysis with Web Worker delegation
 │   │   ├── useRunSimulation.ts          #    Run simulator lifecycle (idle → running → done/error)
 │   │   └── useModConnection.ts          #    Mod bridge: HTTP polling, delta detection, command sending
 │   │
@@ -395,7 +417,7 @@ Push to `main` — the GitHub Actions workflow in `.github/workflows/build-macos
 npx vitest run
 ```
 
-All **502 tests** pass across 18 test files. The test suite covers:
+All **531 tests** pass across 20 test files. The test suite covers:
 
 | Area | Tests | Highlights |
 |------|-------|------------|
@@ -452,11 +474,14 @@ npm run lint
 | Stake presets | 8/8 (100%) | White/Red/Green/Black/Blue/Purple/Orange/Gold |
 | Vouchers | 19/19 (100%) | 6 form-affecting + 13 tracking-only for deck presets |
 | Economy jokers | 9/20 income formulas | Rocket, Golden, Delayed Grat., Cloud 9, Rough Gem, Gift, Reserved Parking, Business, Mail |
+| Tarot card engine | 15/22 (68%) | Strength, Death, Hanged Man, 4 suit changers, 7 enhancement tarots, Emperor/Hierophant — pure-function application |
+| Planet card engine | 12/12 (100%) | All planet → hand type mappings with level-up application |
+| EV strategy engine | 3/3 modes (100%) | Play vs. discard vs. consumable, multi-step lookahead (2-depth MC), cross-round "good enough" planning |
 | i18n | 2 locales (100%) | English + 简体中文, all 150+ joker names localized |
 
 **Known gaps** (see CONTRIBUTING.md or Issues for roadmap):
 - 52 jokers are registry-only (economy + utility jokers without scoring hooks)
-- Tarot deck modification (The Magician, Strength, Hanged Man, etc.) is not simulated in the run simulator
+- Emperor/Hierophant tarot cards implemented; Hermit/Temperance/Fool/Wheel/Judgement skipped as non-scoring
 - Spectral cards are not implemented
 - Plasma Deck scoring (balance chips & mult) is not yet implemented in the engine
 
@@ -618,6 +643,24 @@ Input 页面顶部的两个下拉框根据游戏选择自动填充回合设置�
 
 牌组 + 难度效果正确组合（如蓝牌组 3 弃牌 + 蓝注 -1 = 2 弃牌）。全部变更通过 `computeDeckStakeBase()` 处理 —— 一个合并所选牌组和难度的纯函数。
 
+#### 15. EV 策略引擎 v2 — 多步前瞻 + 消耗牌联动 + 跨回合规划
+
+策略引擎为每个决策分支计算期望值并推荐最优动作序列：
+
+- **消耗牌联动**：手中持有的塔罗牌和星球牌会被评估其得分影响。力量（升点）、死神（复制卡牌）、倒吊人（摧毁低价值牌）、花色转换（星/月/日/世界）以及 7 种强化塔罗牌（魔术师/女祭司/皇后/恋人/战车/正义/恶魔/塔）均以纯函数方式建模 —— 每张消耗牌返回新的 `GameState` 而非修改原状态。当使用消耗牌后的状态产生更高 EV 时，引擎建议"先用消耗牌再出牌"。
+- **多步前瞻**：当剩余 2 次以上弃牌机会时，引擎通过 Monte Carlo 采样评估两步决策树："弃牌→抽样补牌→决定：现在出牌还是再弃牌→出牌。"激进的剪枝策略（top-3 候选、每层 10 样本、15 秒时间上限、930 次 findBestScore 调用）将计算控制在可接受范围内。
+- **跨回合规划（"够用就好"）**：如果较弱牌型已能以 15% 安全边际击败盲注，且最强出牌浪费超过 50% 的得分潜力，引擎建议保留强牌给后续盲注 —— 附注保留牌列表和理由。
+
+**架构：**
+```
+src/engine/consumables.ts    → 纯函数式塔罗/星球牌应用（不可变状态克隆）
+src/engine/lookahead.ts      → 两层 Monte Carlo 决策树搜索 + 剪枝
+src/engine/strategy-evaluator.ts → 顶层 EV 编排器：出牌 vs. 弃牌 vs. 消耗牌
+src/hooks/useStrategyAnalysis.ts → React Hook：Worker 通信 + 结果格式化
+```
+
+新增 `EvOption` 类型：`'play' | 'discard' | 'consumable'`，带多步标注（`isMultiStep`、`lookaheadDepth`、`actionDescriptionZh`）和跨回合节省建议（`savedCards`、`crossRoundRationale`）。
+
 ---
 
 ### 🏗️ 架构
@@ -642,6 +685,9 @@ balatro-calc/
 │   │   ├── shop.ts                      #    商店生成、物品效用评分、凭证定义
 │   │   ├── boss-data.ts                #    28 个 Boss 盲注定义 + BossEffect 接口
 │   │   ├── discard-analyzer.ts         # ★ 弃牌枚举 + 补牌后 EV 估算
+│   │   ├── strategy-evaluator.ts        # ★ EV 策略引擎：出牌 vs. 弃牌 vs. 消耗牌，多步前瞻集成
+│   │   ├── consumables.ts               # ★ 纯函数式塔罗/星球牌应用（力量、死神等 15+ 种效果）
+│   │   ├── lookahead.ts                 # ★ 两层 Monte Carlo 决策树搜索 + 剪枝
 │   │   ├── run-simulator.ts            # ★ 多 ante 状态机：盲注 → 搜索 → 商店 → 循环
 │   │   ├── fog-ev.ts                    #    迷雾牌期望值引擎（组合枚举 + 蒙特卡洛采样）
 │   │   ├── card-parser.ts              #    快捷短码解析器（例："ah 10s kd.g.r 3*jh"）
@@ -667,6 +713,7 @@ balatro-calc/
 │   │   ├── useGameState.ts              #    25-action useReducer 中央状态（回合追踪 + 牌组/难度选择）
 │   │   ├── useSearch.ts                 #    异步搜索 + Web Worker + 进度追踪
 │   │   ├── useDiscardAnalysis.ts        #    弃牌分析委托至 Worker
+│   │   ├── useStrategyAnalysis.ts        #    EV 策略分析委托至 Worker
 │   │   ├── useRunSimulation.ts          #    模拟器生命周期管理
 │   │   └── useModConnection.ts          #    Mod 桥接：HTTP 轮询、增量检测、指令发送
 │   │
@@ -699,7 +746,7 @@ npm run dev
 
 # 快速上手：将存档文件 save.jkr（Windows: %APPDATA%/Balatro/1/save.jkr，macOS: ~/Library/Application Support/Balatro/1/save.jkr）拖入 Input 页面顶部的拖放区，所有游戏状态自动填充。点击 Compute 即可查看最优出牌。
 
-# 运行全部 502 个单元测试
+# 运行全部 531 个单元测试
 npx vitest run
 
 # 监听模式
@@ -732,6 +779,9 @@ npm run lint
 | 难度预设 | 8/8 (100%) | 白/红/绿/黑/蓝/紫/橙/金 |
 | 凭证 | 19/19 (100%) | 6 个表单影响 + 13 个牌组预设追踪 |
 | 经济小丑 | 9/20 收入公式 | Rocket, Golden, Cloud 9, Rough Gem 等 |
+| 塔罗牌引擎 | 15/22 (68%) | 力量、死神、倒吊人、4 花色转换、7 强化塔罗、皇帝/教皇 — 纯函数应用 |
+| 星球牌引擎 | 12/12 (100%) | 全部星球→牌型映射及升级应用 |
+| EV 策略引擎 | 3/3 模式 (100%) | 出牌 vs. 弃牌 vs. 消耗牌，多步前瞻（2 层 MC）、跨回合"够用就好"规划 |
 | 国际化 | 2 种语言 (100%) | English + 简体中文 |
 
 ---

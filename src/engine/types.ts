@@ -232,6 +232,12 @@ export interface GameFlags {
 
 // ─── Full Game State ────────────────────────────────────────────
 
+/** Minimal consumable info for strategy engine (subset of ModHeldConsumable) */
+export interface HeldConsumable {
+  id: string;
+  type: 'tarot' | 'planet' | 'spectral' | 'unknown';
+}
+
 export interface GameState {
   handCards: Card[];
   jokers: JokerInstance[];
@@ -240,6 +246,8 @@ export interface GameState {
   blind: BlindInfo;
   roundState: RoundState;
   flags: GameFlags;
+  /** Held consumable cards (tarot/planet/spectral). Used by strategy engine. */
+  heldConsumables?: HeldConsumable[];
 }
 
 // ─── Search & Results ──────────────────────────────────────────

@@ -8,6 +8,7 @@ import { findOptimalPlays, type SearchConfig } from './search';
 import type { ScoreOptions } from './scorer';
 import { getHandBaseChips, getHandBaseMult, HAND_DEFINITIONS } from './constants';
 import { combinations } from './combo-utils';
+import { computeDiscardEV, buildAvailableCardPool } from './strategy-evaluator';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -410,6 +411,101 @@ function deduplicateOptions(options: DiscardOption[]): DiscardOption[] {
   }
 
   return result;
+}
+
+// ─── MC-EV Refined Discard Analysis ─────────────────────────────
+
+export interface MCDiscardOption extends DiscardOption {
+  /** Monte Carlo estimated expected value (accurate, replaces heuristic estimatedScore) */
+  mcExpectedValue: number;
+  /** Number of MC samples used */
+  mcSamples: number;
+  /** Hand type probabilities from MC sampling */
+  mcHandProbabilities: Partial<Record<HandType, number>>;
+  /** Min/max scores observed in MC */
+  mcMinScore: number;
+  mcMaxScore: number;
+}
+
+/**
+ * Enhanced discard analysis: runs the existing heuristic analysis first,
+ * then refines the top candidates with Monte Carlo EV estimation using
+ * actual deck composition sampling.
+ */
+export function analyzeDiscardsMC(
+  state: GameState,
+  config?: {
+    maxOptions?: number;
+    maxDiscardSize?: number;
+    minKeptCards?: number;
+    /** Number of top heuristic candidates to refine with MC EV */
+    mcRefineCount?: number;
+    /** Number of MC samples per candidate */
+    mcSamples?: number;
+  },
+  searchConfig?: Partial<SearchConfig>,
+  scoreOptions?: ScoreOptions,
+): MCDiscardOption[] {
+  // Step 1: Run heuristic analysis
+  const heuristic = analyzeDiscards(state, config, searchConfig, scoreOptions);
+
+  // Step 2: Build draw pool
+  const pool = buildAvailableCardPool(state.deckComposition);
+  if (pool.length === 0) {
+    return heuristic.options.slice(0, config?.mcRefineCount ?? 5).map(opt => ({
+      ...opt,
+      mcExpectedValue: opt.estimatedScore,
+      mcSamples: 0,
+      mcHandProbabilities: {},
+      mcMinScore: opt.keptScore,
+      mcMaxScore: opt.estimatedScore,
+    }));
+  }
+
+  // Step 3: Refine top candidates with MC EV
+  const refineCount = config?.mcRefineCount ?? 5;
+  const mcSamples = config?.mcSamples ?? 50;
+  const topCandidates = heuristic.options.slice(0, refineCount);
+
+  const refined: MCDiscardOption[] = [];
+
+  for (const candidate of topCandidates) {
+    const evResult = computeDiscardEV(
+      state, candidate.discardIndices, pool,
+      mcSamples, searchConfig, scoreOptions,
+    );
+
+    // Determine most likely target hand
+    const topHand = (Object.entries(evResult.handProbabilities) as [HandType, number][])
+      .sort((a, b) => b[1] - a[1])[0];
+
+    refined.push({
+      ...candidate,
+      mcExpectedValue: evResult.expectedValue,
+      mcSamples: evResult.samplesEvaluated,
+      mcHandProbabilities: evResult.handProbabilities,
+      mcMinScore: evResult.minScore,
+      mcMaxScore: evResult.maxScore,
+      estimatedScore: evResult.expectedValue, // override heuristic with real EV
+      improvement: evResult.expectedValue - heuristic.baselineScore,
+      targetHandTypes: topHand ? [topHand[0], ...candidate.targetHandTypes] : candidate.targetHandTypes,
+      rationale: topHand
+        ? `${candidate.rationale} (MC-EV: ${formatScoreBrief(evResult.expectedValue)}, ` +
+          `${(topHand[1] * 100).toFixed(0)}% chance of ${HAND_DEFINITIONS[topHand[0]]?.name ?? topHand[0]})`
+        : `${candidate.rationale} (MC-EV: ${formatScoreBrief(evResult.expectedValue)})`,
+    });
+  }
+
+  refined.sort((a, b) => b.mcExpectedValue - a.mcExpectedValue);
+  return refined;
+}
+
+function formatScoreBrief(score: number): string {
+  if (!Number.isFinite(score)) return score.toString();
+  if (score < 1000) return score.toFixed(0);
+  if (score < 1_000_000) return (score / 1000).toFixed(1) + 'K';
+  if (score < 1_000_000_000) return (score / 1_000_000).toFixed(1) + 'M';
+  return (score / 1_000_000_000).toFixed(1) + 'B';
 }
 
 // ─── Quick Discard Suggestion ───────────────────────────────────

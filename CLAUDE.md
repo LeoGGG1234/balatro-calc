@@ -6,19 +6,19 @@ Optimal play calculator for Balatro card game. Pure-TypeScript engine + React 18
 - `npm run dev` — start Vite dev server
 - `npm run build` — production build to `dist/`
 - `npm run build:win` — cross-compile Windows .exe (NSIS installer + portable binary)
-- `npx vitest run` — run 502 unit tests (engine core)
+- `npx vitest run` — run 531 unit tests (engine core)
 - `.github/workflows/build-macos.yml` — auto-build macOS DMG on push to main (Intel + Apple Silicon)
 - `npx vitest` — watch mode tests
 
 ## Architecture
 
 ```
-src/engine/        → Zero-dependency TypeScript: types, hand evaluation, joker effects (150/150 jokers), scoring, search, shop, discard analyzer, run simulator (28/28 boss blinds, economy jokers, improved shop, enhanced card drawing), fog-card EV engine, save file decoder (deflate decompression), Lua table parser (recursive descent), card notation parser, save file parser, deck & stake presets (15 decks × 8 stakes with auto field mapping), mod-protocol (shared types for mod↔tool bridge)
+src/engine/        → Zero-dependency TypeScript: types, hand evaluation, joker effects (150/150 jokers), scoring, search, shop, discard analyzer, run simulator (28/28 boss blinds, economy jokers, improved shop, enhanced card drawing), EV strategy engine (multi-step lookahead, consumable synergy, cross-round planning), save file decoder (deflate decompression), Lua table parser (recursive descent), card notation parser, save file parser, deck & stake presets (15 decks × 8 stakes with auto field mapping), mod-protocol (shared types for mod↔tool bridge)
 src/components/    → React UI: input forms (GameStateForm, HandCardsInput, JokerInput, HandLevelInput, CardEditor, CardNotationInput, RoundHUD), results panel, discard panel, shop panel, run sim panel, deck builder, mod connection indicator, shared components
 src/hooks/         → useGameState (25-action useReducer: form state + voucher/boss auto-computation + round session tracker + deck/stake selection), useSearch, useDiscardAnalysis, useRunSimulation, useModConnection (HTTP polling + delta detection + command sending)
 src/i18n/          → Lightweight React Context: context.tsx, types.ts, locales/en.ts, locales/zh-CN.ts
 mod/balatro-calc/  → Steammodded Lua mod: HTTP server (luasocket, non-blocking TCP), game state collector (G.hand/G.jokers/G.deck/G.GAME), card highlighter (love.graphics overlays), command dispatcher, pure-Lua JSON codec
-tests/             → Vitest unit tests for engine (18 files, 502 tests)
+tests/             → Vitest unit tests for engine (20 files, 531 tests)
 ```
 
 ## Key conventions
