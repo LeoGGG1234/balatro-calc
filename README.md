@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-19.2-61dafb)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.0-646cff)](https://vite.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.1-6e9f2a)](https://vitest.dev/)
-[![Tests](https://img.shields.io/badge/Tests-531%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-537%20passed-brightgreen)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow)]()
 
 ---
@@ -417,7 +417,7 @@ Push to `main` — the GitHub Actions workflow in `.github/workflows/build-macos
 npx vitest run
 ```
 
-All **531 tests** pass across 20 test files. The test suite covers:
+All **537 tests** pass across 20 test files. The test suite covers:
 
 | Area | Tests | Highlights |
 |------|-------|------------|
@@ -746,7 +746,7 @@ npm run dev
 
 # 快速上手：将存档文件 save.jkr（Windows: %APPDATA%/Balatro/1/save.jkr，macOS: ~/Library/Application Support/Balatro/1/save.jkr）拖入 Input 页面顶部的拖放区，所有游戏状态自动填充。点击 Compute 即可查看最优出牌。
 
-# 运行全部 531 个单元测试
+# 运行全部 537 个单元测试
 npx vitest run
 
 # 监听模式

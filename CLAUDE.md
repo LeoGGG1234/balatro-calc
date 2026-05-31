@@ -6,7 +6,7 @@ Optimal play calculator for Balatro card game. Pure-TypeScript engine + React 18
 - `npm run dev` — start Vite dev server
 - `npm run build` — production build to `dist/`
 - `npm run build:win` — cross-compile Windows .exe (NSIS installer + portable binary)
-- `npx vitest run` — run 531 unit tests (engine core)
+- `npx vitest run` — run 537 unit tests (engine core)
 - `.github/workflows/build-macos.yml` — auto-build macOS DMG on push to main (Intel + Apple Silicon)
 - `npx vitest` — watch mode tests
 
@@ -18,7 +18,7 @@ src/components/    → React UI: input forms (GameStateForm, HandCardsInput, Jok
 src/hooks/         → useGameState (25-action useReducer: form state + voucher/boss auto-computation + round session tracker + deck/stake selection), useSearch, useDiscardAnalysis, useRunSimulation, useModConnection (HTTP polling + delta detection + command sending)
 src/i18n/          → Lightweight React Context: context.tsx, types.ts, locales/en.ts, locales/zh-CN.ts
 mod/balatro-calc/  → Steammodded Lua mod: HTTP server (luasocket, non-blocking TCP), game state collector (G.hand/G.jokers/G.deck/G.GAME), card highlighter (love.graphics overlays), command dispatcher, pure-Lua JSON codec
-tests/             → Vitest unit tests for engine (20 files, 531 tests)
+tests/             → Vitest unit tests for engine (20 files, 537 tests)
 ```
 
 ## Key conventions
