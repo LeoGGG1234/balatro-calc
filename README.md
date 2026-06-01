@@ -6,8 +6,37 @@
 
 ---
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19.2-61dafb)](https://react.dev/)
+## 📸 Demo
+
+> **Live web tool**: Run locally with `npm run dev` — or build desktop app with `npm run build:win`.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  🃏 Balatro Calc                                          [?] [-][×]
+├──────────────────────────────────────────────────────────────────┤
+│  Game State                        │  Search Results              │
+│  ┌────────────────────────────┐    │  ┌────────────────────────┐  │
+│  │ Hand: K♠ Q♠ J♠ 10♠ 9♠    │    │  │ 🏆 Optimal Play Found  │  │
+│  │ Jokers: Lusty Joker,       │    │  │                        │  │
+│  │   Card Sharp, Blueprint    │    │  │ ► Play: Straight Flush │  │
+│  │ Level: Lv.5 Straight Flush │    │  │   Cards: K♠ Q♠ J♠ 10♠ 9♠│
+│  │ Ante: 4  Blind: 12,000     │    │  │   Base: 450 × 8 = 3,600│  │
+│  │ Hands: 3  Discards: 2      │    │  │   Lusty Joker: +120    │  │
+│  └────────────────────────────┘    │  │   Card Sharp: ×3       │  │
+│                                    │  │   Blueprint→Sharp: ×3  │  │
+│  [Compute] [Analyze Discard]      │  │   ─────────────────────│  │
+│                                    │  │   Final: 22,050 ✓      │  │
+│  ── Mod Bridge ──                  │  │   vs Blind 12,000      │  │
+│  ● Connected (300ms sync)          │  └────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key interactions:**
+1. Enter your game state manually or **auto-sync via the Lua mod** (300ms bidirectional bridge)
+2. Click **Compute** → exhaustive search finds optimal play across all card subsets × joker orderings
+3. **Discard Analyzer** simulates Monte Carlo EV for every possible discard
+4. **Run Simulator** plays through 8 antes with full boss/joker simulation
+5. Mod highlights optimal cards **in-game with green overlays**
 [![Vite](https://img.shields.io/badge/Vite-8.0-646cff)](https://vite.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.1-6e9f2a)](https://vitest.dev/)
 [![Tests](https://img.shields.io/badge/Tests-537%20passed-brightgreen)]()
