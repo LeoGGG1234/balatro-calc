@@ -1,6 +1,6 @@
 # Balatro Calc
 
-Optimal play calculator for Balatro card game. Pure-TypeScript engine + React 18 UI.
+Optimal play calculator for Balatro card game. Pure-TypeScript engine + React 19 UI.
 
 ## Commands
 - `npm run dev` — start Vite dev server

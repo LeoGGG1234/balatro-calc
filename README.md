@@ -277,7 +277,7 @@ balatro-calc/
 │   │   ├── search-client.ts            #    Singleton worker manager with Promise-based API
 │   │   └── index.ts                     #    Public API barrel export
 │   │
-│   ├── components/                      # React 18 UI layer
+│   ├── components/                      # React 19 UI layer
 │   │   ├── input/
 │   │   │   ├── GameStateForm.tsx        #    Main input form: deck/stake selectors, RoundHUD, hand, jokers, levels, round, deck
 │   │   │   ├── RoundHUD.tsx             #    Round status bar: hands/discards/score progress bars, new round button
@@ -319,9 +319,9 @@ balatro-calc/
 │   │       └── zh-CN.ts                 #    Simplified Chinese — full parity
 │   │
 │   ├── App.tsx                          # 5-tab layout: Input / Discard / Results / Shop / Run Sim
-│   └── main.tsx                         # React 18 createRoot entry
+│   └── main.tsx                         # React 19 createRoot entry
 │
-├── tests/                               # Vitest test suite — 18 files, 502 tests
+├── tests/                               # Vitest test suite — 20 files, 537 tests
 │   ├── edge-cases.test.ts               #    15-dimension stress matrix
 │   ├── save-decoder.test.ts             #    Save decoder + Lua parser pipeline (44 tests)
 │   ├── helpers.ts                       #    card() factory + defaultState() builder
@@ -729,7 +729,7 @@ balatro-calc/
 │   │   ├── search-client.ts            #    单例 Worker 管理器 + Promise API
 │   │   └── index.ts                     #    公共 API 导出
 │   │
-│   ├── components/                      # React 18 UI 层
+│   ├── components/                      # React 19 UI 层
 │   │   ├── input/                       #    输入组件（GameStateForm, RoundHUD, CardEditor, JokerInput 等）
 │   │   ├── deck/                        #    牌库组件（DeckBuilder, DeckBuilderVisual）
 │   │   ├── mod/                         #    Mod连接组件（ModConnectionIndicator）
@@ -759,7 +759,7 @@ balatro-calc/
 │           ├── highlighter.lua           #    绘制绿色（出牌）/ 红色（弃牌）卡牌高亮
 │           └── commands.lua              #    分发 POST /api/command 指令
 │
-└── tests/                               # Vitest 测试套件 — 18 文件 / 502 用例
+└── tests/                               # Vitest 测试套件 — 20 文件 / 537 用例
 ```
 
 ---
